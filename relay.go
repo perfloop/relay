@@ -20,6 +20,8 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -252,18 +254,29 @@ func (r *Relay) forward(w http.ResponseWriter, req *http.Request) (int, string, 
 	if !ok {
 		return refuse(w, http.StatusForbidden, "route is not a documented read"), "route", nil
 	}
+	// One read is bounded end to end on both sides: the upstream client's
+	// timeout, and the same deadline on the response write, so a tunnel peer
+	// that withholds flow-control credit cannot hold the stream forever.
+	ctx, cancel := context.WithTimeout(req.Context(), readTimeout)
+	defer cancel()
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(readTimeout)); err != nil {
+		return refuse(w, http.StatusInternalServerError, "write deadline is not supported"), "path", err
+	}
 	target := *up.base
 	target.Path = path.Join(up.base.Path, req.URL.Path)
 	target.RawQuery = req.URL.RawQuery
-	out, err := http.NewRequestWithContext(req.Context(), http.MethodGet, target.String(), http.NoBody)
+	out, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), http.NoBody)
 	if err != nil {
 		return refuse(w, http.StatusBadRequest, "request could not be built"), "path", err
 	}
-	maps.Copy(out.Header, req.Header)
-	link.StripHop(out.Header)
-	// The read id is for this log, not for the upstream: Perfloop's
-	// identifiers stop here.
-	out.Header.Del(link.RequestIDHeader)
+	// Only the headers Perfloop is known to send cross to the upstream; the
+	// read id and anything else stop here. The customer's headers come last
+	// and win.
+	for _, name := range link.ForwardedHeaders {
+		if values := req.Header.Values(name); len(values) > 0 {
+			out.Header[http.CanonicalHeaderKey(name)] = slices.Clone(values)
+		}
+	}
 	for header, value := range up.Headers {
 		out.Header.Set(header, value)
 	}
@@ -280,6 +293,13 @@ func (r *Relay) forward(w http.ResponseWriter, req *http.Request) (int, string, 
 	defer resp.Body.Close()
 	maps.Copy(w.Header(), resp.Header)
 	link.StripHop(w.Header())
+	// An upstream cannot speak as Perfloop: no Perfloop-* header of its
+	// making reaches the tunnel, whatever the API strips on its side.
+	for name := range w.Header() {
+		if strings.HasPrefix(name, "Perfloop-") {
+			w.Header().Del(name)
+		}
+	}
 	w.WriteHeader(resp.StatusCode)
 	n, err := io.Copy(w, io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {

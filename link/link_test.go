@@ -37,4 +37,16 @@ func TestExpandEnvNamesEveryUnsetVariable(t *testing.T) {
 	if err == nil || !strings.HasSuffix(err.Error(), "LINK_TEST_MISSING_A, LINK_TEST_MISSING_B") {
 		t.Fatalf("unset variables: %v", err)
 	}
+	// An unterminated reference is an error, never a silently shorter file.
+	if out, err := ExpandEnv([]byte("token: ${LINK_TEST_TOKEN\nupstreams: []\n")); err == nil || !strings.Contains(err.Error(), "unterminated") {
+		t.Fatalf("unterminated reference: %q, %v", out, err)
+	}
+}
+
+func TestStripHopRemovesProxyCredentials(t *testing.T) {
+	header := http.Header{"Proxy-Authorization": {"Basic x"}, "Proxy-Authenticate": {"Basic"}, "Accept": {"*/*"}}
+	StripHop(header)
+	if len(header) != 1 || header.Get("Accept") != "*/*" {
+		t.Fatalf("stripped header = %v", header)
+	}
 }

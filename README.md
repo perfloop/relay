@@ -6,7 +6,7 @@ This repository is the complete source of what runs there. The image Perfloop
 publishes is built from it, by the workflow in this repository, and is tagged
 with the commit it was built from.
 
-710 lines of Go outside tests, three runtime dependencies (`coder/websocket`,
+756 lines of Go outside tests, three runtime dependencies (`coder/websocket`,
 `go.yaml.in/yaml/v3`, `golang.org/x/net`): read it in an afternoon.
 
 ## What it does

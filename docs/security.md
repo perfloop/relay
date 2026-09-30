@@ -105,13 +105,18 @@ are not in the table and are refused before any upstream request; the tests in
 `admin/tsdb/snapshot`, `write`, `push`, and a `..` in the path.
 
 A forwarded request is built as: the upstream `url` plus the read's path,
-the read's query string unchanged, the end-to-end headers Perfloop sent
-(hop-by-hop headers are removed), then the upstream's configured `headers`,
-which replace any header of the same name. The `Perfloop-Request-Id` header
-is removed before the upstream request. The upstream response's status,
-headers, and body are returned to Perfloop as they are. A redirect from the
-upstream is not followed: the read fails with `502 upstream request failed`,
-like any other upstream error.
+the read's query string unchanged, and, of the request headers Perfloop
+sent, exactly `Accept`, `Accept-Encoding`, `User-Agent`, and `X-Scope-OrgID`
+(`link.ForwardedHeaders`; `-print-routes` prints them). Every other request
+header, the `Perfloop-Request-Id` included, stops at the relay. Then the
+upstream's configured `headers` are set and replace any header of the same
+name: a customer who wants to pin the Loki tenant sets `X-Scope-OrgID` in
+`headers:`, and the value Perfloop sent never reaches the upstream. The
+upstream response's status, headers, and body are returned to Perfloop as
+they are, except that hop-by-hop headers and every `Perfloop-*` header the
+upstream sent are removed, so an upstream cannot speak as Perfloop. A
+redirect from the upstream is not followed: the read fails with `502
+upstream request failed`, like any other upstream error.
 
 Bounds on one read: two minutes end to end, and a response body of at most
 32 MiB. A larger body aborts the read so that Perfloop sees a broken read,
