@@ -67,7 +67,7 @@ spec:
         - name: relay
           # Pin the digest from the Image run of the commit you read, and
           # verify its signature first (docs/image.md).
-          image: us-central1-docker.pkg.dev/perfloop-public-prod/perfloop-images/relay@<digest>
+          image: ghcr.io/perfloop/relay@<digest>
           args:
             - -config=/etc/perfloop-relay/relay.yaml
           env:

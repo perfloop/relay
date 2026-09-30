@@ -4,19 +4,20 @@ The image is published by `.github/workflows/image.yml` on every push to
 `main`, at
 
 ```
-us-central1-docker.pkg.dev/perfloop-public-prod/perfloop-images/relay
+ghcr.io/perfloop/relay
 ```
 
 tagged with the full and the short SHA of the commit it was built from, so a
-tag names a commit of this repository. Pin the image by digest in your
-manifests. To verify that the image is what this repository builds:
+tag names a commit of this repository. The package is public: pulling it
+needs no credential. Pin the image by digest in your manifests. To verify that
+the image is what this repository builds:
 
 1. Open the `Image` workflow run for that commit under Actions in this
    repository. Its summary lists the tags and the manifest digest.
 2. Resolve the tag yourself and compare the digest:
 
    ```sh
-   docker buildx imagetools inspect us-central1-docker.pkg.dev/perfloop-public-prod/perfloop-images/relay:<commit sha>
+   docker buildx imagetools inspect ghcr.io/perfloop/relay:<commit sha>
    ```
 
 3. Compare the binary, not the image. The binary is reproducible: the Go
@@ -28,7 +29,7 @@ manifests. To verify that the image is what this repository builds:
    commit's checkout:
 
    ```sh
-   image=us-central1-docker.pkg.dev/perfloop-public-prod/perfloop-images/relay@<digest>
+   image=ghcr.io/perfloop/relay@<digest>
    id="$(docker create "$image")"
    docker cp "$id:/usr/local/bin/perfloop-relay" published-relay
    docker rm "$id" >/dev/null
@@ -52,7 +53,7 @@ image you pull was published by this repository's `main` branch:
 cosign verify \
   --certificate-identity https://github.com/perfloop/relay/.github/workflows/image.yml@refs/heads/main \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  us-central1-docker.pkg.dev/perfloop-public-prod/perfloop-images/relay@<digest>
+  ghcr.io/perfloop/relay@<digest>
 ```
 
 A signature by any other repository, branch, or workflow fails this check.

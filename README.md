@@ -74,7 +74,7 @@ Running, `-print-routes`, and the audit log: [docs/operations.md](docs/operation
 ## The image
 
 ```
-us-central1-docker.pkg.dev/perfloop-public-prod/perfloop-images/relay:<commit sha>
+ghcr.io/perfloop/relay:<commit sha>
 ```
 
 Pin it by digest. The binary is reproducible from the commit, and each
