@@ -1,0 +1,157 @@
+# The Perfloop relay on Kubernetes: one Deployment, its configuration, the
+# shape of its Secret, and a NetworkPolicy that lets it reach only the
+# Perfloop API and your upstreams, and lets nothing reach it.
+#
+# Replace every <placeholder>, then: kubectl apply -f relay.yaml
+# Before rolling, see what the file lets the relay do:
+#   kubectl -n <namespace> exec deploy/perfloop-relay -- /usr/local/bin/perfloop-relay -print-routes
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: perfloop-relay-config
+  namespace: <namespace>
+data:
+  # Every field: docs/configuration.md. ${VAR} references are expanded from
+  # the container's environment, so the tokens below live in the Secret.
+  relay.yaml: |
+    api: https://app.perfloop.ai
+    token: ${PERFLOOP_RELAY_TOKEN}
+    upstreams:
+      - name: <upstream-name>
+        kind: <prometheus|victoriametrics|loki>
+        url: http://<upstream-service>.<upstream-namespace>.svc:<upstream-port>
+        headers:
+          Authorization: Bearer ${UPSTREAM_READ_TOKEN}
+---
+# The shape only. Create the Secret out of band, from the relay token Perfloop
+# Setup showed you once and a read-only token for the upstream:
+#   kubectl -n <namespace> create secret generic perfloop-relay \
+#     --from-literal=token=<relay token> --from-literal=upstream-read-token=<upstream token>
+apiVersion: v1
+kind: Secret
+metadata:
+  name: perfloop-relay
+  namespace: <namespace>
+type: Opaque
+stringData:
+  token: <relay token>
+  upstream-read-token: <upstream read token>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perfloop-relay
+  namespace: <namespace>
+  labels:
+    app.kubernetes.io/name: perfloop-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: perfloop-relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: perfloop-relay
+    spec:
+      # The relay talks to no Kubernetes API; it needs no identity here.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # The distroless nonroot user.
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: relay
+          # Pin the digest from the Image run of the commit you read, and
+          # verify its signature first (docs/image.md).
+          image: us-central1-docker.pkg.dev/perfloop-public-prod/perfloop-images/relay@<digest>
+          args:
+            - -config=/etc/perfloop-relay/relay.yaml
+          env:
+            - name: PERFLOOP_RELAY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: perfloop-relay
+                  key: token
+            - name: UPSTREAM_READ_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: perfloop-relay
+                  key: upstream-read-token
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/perfloop-relay
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: perfloop-relay-config
+---
+# No ingress at all: the relay binds no port, and nothing may reach it.
+# Egress only to: DNS, the Perfloop API host on 443 (a public address, so
+# every private range is excluded), and the named upstream.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: perfloop-relay
+  namespace: <namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: perfloop-relay
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    # Name resolution for the API host and the upstream.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The Perfloop API host, on 443 only. If your egress goes through an
+    # HTTPS_PROXY, allow that proxy's address and port here instead.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # The upstream named in relay.yaml, on its port only. Repeat this block
+    # per upstream. The upstream's own NetworkPolicy must admit the relay.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: <upstream-namespace>
+          podSelector:
+            matchLabels:
+              <upstream-label-key>: <upstream-label-value>
+      ports:
+        - protocol: TCP
+          port: <upstream-port>

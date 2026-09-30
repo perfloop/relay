@@ -7,6 +7,9 @@ perfloop-relay -config /etc/perfloop-relay/relay.yaml
 `-config` defaults to `/etc/perfloop-relay/relay.yaml`. Logs are JSON lines
 on standard output.
 
+A Kubernetes starting point, with a hardened pod and a NetworkPolicy that
+allows only the egress the relay needs, is in `examples/kubernetes/`.
+
 ## `-print-routes`
 
 ```sh

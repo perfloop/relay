@@ -81,6 +81,18 @@ jobs:
           sbom: ${{ env.PUBLISH == 'true' && 'generator=docker/buildkit-syft-scanner@sha256:79e7b013cbec16bbb436f312819a49a4a57752b2270c1a9332ae1a10fcc82a68' || 'false' }}
 
       - if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+
+      - if: env.PUBLISH == 'true'
+        name: Sign the published digest
+        # Keyless: the signing identity is this workflow's OIDC token, so a
+        # verifier can require exactly this repository, workflow, and branch
+        # (docs/image.md). No signing key exists.
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - if: env.PUBLISH == 'true'
         name: Report digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -101,6 +113,8 @@ jobs:
             echo '```'
             echo "${IMAGE}@${DIGEST}"
             echo '```'
+            echo
+            echo "Signed with keyless cosign by this workflow's identity (docs/image.md)."
             echo
             echo "Customers pull this image by digest; publish the new digest in the relay guide when it changes."
           } >>"$GITHUB_STEP_SUMMARY"
