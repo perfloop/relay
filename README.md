@@ -1,7 +1,7 @@
 # Perfloop relay
 
 A small program you run inside your network so Perfloop can read the
-telemetry you keep there: metrics, logs, and profiles from providers the
+telemetry you keep there: metrics, logs, profiles, and traces from providers the
 public internet cannot reach. This repository is the complete source of what
 runs there. The image Perfloop publishes is built from it, by the workflow in
 this repository, and is tagged with the commit it was built from.
