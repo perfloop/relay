@@ -6,6 +6,9 @@ This repository is the complete source of what runs there. The image Perfloop
 publishes is built from it, by the workflow in this repository, and is tagged
 with the commit it was built from.
 
+710 lines of Go outside tests, three runtime dependencies (`coder/websocket`,
+`go.yaml.in/yaml/v3`, `golang.org/x/net`): read it in an afternoon.
+
 ## What it does
 
 - Opens outbound tunnels to the Perfloop API. It binds no port.
@@ -59,6 +62,10 @@ The full model, with the code that enforces each point:
    perfloop-relay -config relay.yaml
    ```
 
+   For Kubernetes, start from [examples/kubernetes/](examples/kubernetes/):
+   a hardened Deployment and a NetworkPolicy that allows egress only to the
+   Perfloop API and your upstreams.
+
 5. In Perfloop Setup, register the source as `relay://vm`.
 
 Every configuration field: [docs/configuration.md](docs/configuration.md).
@@ -70,8 +77,11 @@ Running, `-print-routes`, and the audit log: [docs/operations.md](docs/operation
 us-central1-docker.pkg.dev/perfloop-public-prod/perfloop-images/relay:<commit sha>
 ```
 
-Pin it by digest. The binary is reproducible from the commit; how to verify
-it: [docs/image.md](docs/image.md).
+Pin it by digest. The binary is reproducible from the commit, and each
+published digest is signed with keyless cosign; how to verify both:
+[docs/image.md](docs/image.md).
+
+Vulnerabilities: [SECURITY.md](SECURITY.md).
 
 ## Development
 

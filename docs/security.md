@@ -2,6 +2,47 @@
 
 What runs in your network, what it can be asked to do, and what it cannot. Every claim names the code that enforces it.
 
+## Threat model
+
+What the relay defends against:
+
+- Perfloop, or anyone holding a tunnel, reaching anything not in your file.
+  A read is answered only for an upstream named in the configuration
+  (`relay.go`, `forward`: `r.upstreams[req.Host]`), only as a `GET` without a
+  body, and only on a documented read route of that upstream's kind
+  (`routes.go`, `route`). There is no other handler, listener, or route.
+- A stolen relay token reading Perfloop data. The token is a bearer for the
+  tunnel route only; the Perfloop API refuses it everywhere else. The relay
+  sends it to the configured `api` origin and nowhere else: redirects are not
+  followed (`relay.go`, `New`, `CheckRedirect`).
+- Your credentials leaving your network. Upstream headers are read from your
+  file and set on the upstream request only (`relay.go`, `forward`,
+  `up.Headers`); they are never printed (`routes.go`, `Routes`) or logged,
+  and Perfloop's own headers cannot override them, because yours are set
+  last.
+
+What the relay trusts:
+
+- The Perfloop API's validation of each read. The relay does not parse
+  queries or check scopes; it forwards the query string unchanged
+  (`relay.go`, `forward`, `target.RawQuery = req.URL.RawQuery`).
+- TLS to the configured origin: the system roots, or only `api_ca` when set,
+  TLS 1.2 or later (`relay.go`, `New`, `TLSClientConfig`). A wrong
+  certificate ends the handshake (`relay_test.go`,
+  `TestTunnelRefusesUntrustedAPICertificate`).
+- Your upstream not echoing request headers into responses. Responses are
+  forwarded as they are (`relay.go`, `forward`, the `io.Copy`).
+
+What stays your job:
+
+- Custody and rotation of the relay token, in the Secret your file
+  references, and revoking it in Perfloop Setup when it may have leaked.
+- A read-only, query-scoped token for each upstream in its `headers`.
+- The NetworkPolicy: egress to the Perfloop API host on 443 and to your
+  upstreams, nothing else, and no ingress (`examples/kubernetes/`).
+- Choosing when to roll a new image, after reading its commit and verifying
+  its signature (`docs/image.md`). Nothing updates the relay for you.
+
 ## How the tunnel works
 
 The relay opens a WebSocket to the Perfloop API host over HTTPS

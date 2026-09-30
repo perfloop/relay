@@ -40,6 +40,25 @@ manifests. To verify that the image is what this repository builds:
 
    The two sums are equal.
 
+## The signature
+
+Every published digest is signed with keyless [cosign](https://docs.sigstore.dev)
+by the `Image` workflow itself: the signing identity is the workflow's own
+GitHub OIDC token, the certificate is issued by Fulcio and recorded in the
+Rekor transparency log, and no signing key exists anywhere. Verify that the
+image you pull was published by this repository's `main` branch:
+
+```sh
+cosign verify \
+  --certificate-identity https://github.com/perfloop/relay/.github/workflows/image.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  us-central1-docker.pkg.dev/perfloop-public-prod/perfloop-images/relay@<digest>
+```
+
+A signature by any other repository, branch, or workflow fails this check.
+Signing starts with the first publish after the signing step landed in
+`image.yml`; images published before it carry no signature.
+
 The image runs the binary as `nonroot` on a distroless base with nothing
 else in it. A published image carries an SPDX SBOM attestation.
 

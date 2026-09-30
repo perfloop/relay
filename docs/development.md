@@ -6,6 +6,13 @@ go vet ./...
 golangci-lint run ./...
 ```
 
+The module has three runtime dependencies: `github.com/coder/websocket` (the
+tunnel's WebSocket), `go.yaml.in/yaml/v3` (the configuration file), and
+`golang.org/x/net` (HTTP/2 inside the tunnel and header validation).
+`go.uber.org/goleak` is used by the tests only; it is not linked into the
+binary. The line count in the README is `cat relay.go config.go routes.go
+link/link.go cmd/perfloop-relay/main.go | wc -l`.
+
 `relay_test.go` runs the relay against a terminator of the same wire shape
 as the Perfloop API's: it proves the route allowlist, that upstream
 credentials come from the configuration and Perfloop's do not reach the
