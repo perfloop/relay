@@ -56,6 +56,14 @@ linters:
       context-todo: true
   exclusions:
     rules:
+      # x/net v0.59 deprecates its HTTP/2 server and client connection types in
+      # favor of Go 1.27's net/http ones. This module's go directive stays at
+      # the Perfloop monorepo's version, which imports link/, so those
+      # replacements are not available yet; move when the directive is 1.27.
+      - path: '^relay(_test)?\.go$'
+        text: 'SA1019: .*golang.org/x/net/http2'
+        linters:
+          - staticcheck
       - text: 'shadow: declaration of "(err|ctx|logger)" shadows declaration at'
         linters:
           - govet
