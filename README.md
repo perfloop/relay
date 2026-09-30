@@ -68,6 +68,10 @@ The full model, with the code that enforces each point:
 
 5. In Perfloop Setup, register the source as `relay://vm`.
 
+The same steps as an ordered procedure with a checkpoint after each one, and
+a table of what each failure means: [docs/setup.md](docs/setup.md). Agents
+start there ([AGENTS.md](AGENTS.md)).
+
 Every configuration field: [docs/configuration.md](docs/configuration.md).
 Running, `-print-routes`, and the audit log: [docs/operations.md](docs/operations.md).
 
