@@ -39,7 +39,7 @@ The full model, with the code that enforces each point:
 
 ## Quick start
 
-1. In Perfloop Setup, under API keys, create a relay token. It is shown once.
+1. In Perfloop Setup, under Telemetry, Relay tokens, create a relay token. It is shown once.
 2. Write `relay.yaml`:
 
    ```yaml
