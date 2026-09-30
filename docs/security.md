@@ -149,7 +149,7 @@ never a short body that looks complete.
 ## The relay token
 
 A relay token is a Perfloop API key with the `relay` scope. A tenant admin
-creates it in Setup, under API keys, as a relay token, and revokes it there.
+creates it in Setup, under Telemetry, Relay tokens, and revokes it there.
 The plaintext is shown once; Perfloop stores only its hash. The token lets a
 relay answer that tenant's validated reads and nothing else: the Perfloop API
 refuses it as a bearer everywhere but the tunnel route, so a token held in

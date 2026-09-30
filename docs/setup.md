@@ -39,12 +39,13 @@ To verify the signature and the binary, see [image.md](image.md).
 
 ## 2. Create the relay token
 
-In the Perfloop app, open `https://app.perfloop.ai/t/<tenant>/setup`, find the
-**API keys** group, enter a name for the token (for example
-`relay <namespace>`), and press **Create relay token**. Copy the token now;
-it is shown once. It starts with `plf_`.
+In the Perfloop app, open `https://app.perfloop.ai/t/<tenant>/setup`, and in
+**Model inputs**, at the end of the **Telemetry** section, find
+**Relay tokens**. Enter a name for the token (for example `relay <namespace>`)
+and press **Create relay token**. Copy the token now; it is shown once. It
+starts with `plf_`.
 
-Checkpoint: the token appears in the live keys table with scope `relay`.
+Checkpoint: the token's name appears in the Relay tokens list.
 
 Hold the token in an environment variable in your shell, never in a file
 or on a command line that shell history records:
