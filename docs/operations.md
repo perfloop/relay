@@ -8,7 +8,8 @@ perfloop-relay -config /etc/perfloop-relay/relay.yaml
 on standard output.
 
 A Kubernetes starting point, with a hardened pod and a NetworkPolicy that
-allows only the egress the relay needs, is in `examples/kubernetes/`.
+allows only the egress the relay needs, is in `examples/kubernetes/`. The
+ordered setup procedure with checkpoints is [setup.md](setup.md).
 
 ## `-print-routes`
 
