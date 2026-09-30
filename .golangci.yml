@@ -1,0 +1,65 @@
+# The same linters and settings as the Perfloop repository this module was
+# extracted from, without the exclusions for files that are not here.
+version: "2"
+
+run:
+  modules-download-mode: readonly
+  timeout: 15m
+
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - gosec
+    - govet
+    - ineffassign
+    - modernize
+    - noctx
+    - staticcheck
+    - unused
+    - usetesting
+  settings:
+    govet:
+      enable:
+        - copylocks
+    gosec:
+      excludes:
+        # G101 fires on constants whose names contain "token" or "auth"
+        # but carry no credential.
+        - G101
+        # G104 (unhandled errors) overlaps errcheck and is loud on
+        # defer Close patterns.
+        - G104
+        # G115 (integer-overflow conversion) is noisy on safely-bounded
+        # ints.
+        - G115
+        # G118 (goroutine uses context.Background) is a request-scope
+        # check; it fires on the command's startup path.
+        - G118
+        # G304 (file inclusion via variable) flags the config and CA file
+        # reads, whose paths are the operator's own configuration.
+        - G304
+        # G703 (path traversal via taint) flags filepath.Join calls that
+        # already validate inputs upstream.
+        - G703
+    usetesting:
+      os-temp-dir: true
+      context-background: true
+      context-todo: true
+  exclusions:
+    rules:
+      - text: 'shadow: declaration of "(err|ctx|logger)" shadows declaration at'
+        linters:
+          - govet
+      # gosec G104 (errcheck) on tests is noise.
+      - path: _test\.go
+        linters:
+          - gosec

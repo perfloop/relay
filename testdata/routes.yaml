@@ -1,0 +1,12 @@
+api: https://app.perfloop.ai
+token: ${PERFLOOP_RELAY_TOKEN}
+upstreams:
+  - name: vm
+    kind: victoriametrics
+    url: http://vm.internal:8428/select/0/prometheus
+    headers:
+      Authorization: Bearer ${VM_READ_TOKEN}
+      X-Scope-OrgID: team-a
+  - name: logs
+    kind: loki
+    url: https://loki.internal

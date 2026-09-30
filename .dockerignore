@@ -1,0 +1,7 @@
+# Only the module is a build input.
+.git
+.github
+.golangci.yml
+*.md
+**/testdata/
+perfloop-relay

@@ -1,0 +1,20 @@
+upstream vm
+  kind    victoriametrics
+  url     http://vm.internal:8428/select/0/prometheus
+  headers Authorization, X-Scope-OrgID (values not shown)
+  forwards GET, with the query string unchanged, to:
+    http://vm.internal:8428/select/0/prometheus/api/v1/query
+    http://vm.internal:8428/select/0/prometheus/api/v1/query_range
+    http://vm.internal:8428/select/0/prometheus/api/v1/labels
+    http://vm.internal:8428/select/0/prometheus/api/v1/label/{name}/values
+    http://vm.internal:8428/select/0/prometheus/api/v1/series
+    http://vm.internal:8428/select/0/prometheus/api/v1/metadata
+
+upstream logs
+  kind    loki
+  url     https://loki.internal
+  forwards GET, with the query string unchanged, to:
+    https://loki.internal/loki/api/v1/query
+    https://loki.internal/loki/api/v1/query_range
+    https://loki.internal/loki/api/v1/labels
+    https://loki.internal/loki/api/v1/label/{name}/values
