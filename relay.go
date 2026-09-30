@@ -284,8 +284,7 @@ func (r *Relay) forward(w http.ResponseWriter, req *http.Request) (int, string, 
 	if err != nil {
 		// The client's error names the full URL, query included; the audit
 		// line carries the path only, so log the cause without it.
-		var urlErr *url.Error
-		if errors.As(err, &urlErr) {
+		if urlErr, ok := errors.AsType[*url.Error](err); ok {
 			err = urlErr.Err
 		}
 		return refuse(w, http.StatusBadGateway, "upstream request failed"), "upstream-error", err
