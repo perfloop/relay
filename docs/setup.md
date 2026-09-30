@@ -13,7 +13,7 @@ Collect these before starting. Nothing else is needed.
 | `<tenant>` | Your Perfloop tenant name, the segment after `/t/` in the app URL. |
 | `<namespace>` | The Kubernetes namespace the relay will run in. |
 | `<upstream-name>` | A name you choose for the source, one lowercase DNS label, for example `vm`. |
-| `<kind>` | `prometheus`, `victoriametrics`, or `loki`. |
+| `<kind>` | One of the kinds `routes.go` lists: today `prometheus`, `victoriametrics`, or `loki`. |
 | `<upstream-url>` | The provider base URL as reachable from inside the cluster, for example `http://vmselect.monitoring.svc:8481/select/0/prometheus`. No trailing slash. |
 | `<upstream-read-token>` | A read-only token for that upstream, if it needs one. Query-scoped. |
 | `<digest>` | The relay image digest to pin. See "Choose the image" below. |

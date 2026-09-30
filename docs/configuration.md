@@ -27,7 +27,8 @@ upstreams:
     # lowercase DNS label: a-z, 0-9, and -, up to 63 characters, no
     # leading or trailing -. Names must be unique in the file.
     name: vm
-    # prometheus, victoriametrics, or loki. Selects the read routes
+    # One of the kinds routes.go lists: today prometheus, victoriametrics,
+    # or loki. Selects the read routes
     # (docs/security.md, "What the relay forwards").
     kind: victoriametrics
     # The provider base: scheme, host, port, and an optional path prefix.
