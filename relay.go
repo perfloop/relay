@@ -7,6 +7,7 @@
 package relay
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -73,8 +74,14 @@ type Relay struct {
 
 type upstream struct {
 	Upstream
-	base   *url.URL
-	client *http.Client
+	// base is the provider URL of a metrics or logs upstream.
+	base *url.URL
+	// targets are the process bases of a pprof upstream, by target name.
+	targets map[string]*url.URL
+	// slots is the pprof in-flight cap: one token per permitted read.
+	slots      chan struct{}
+	maxSeconds int
+	client     *http.Client
 }
 
 // New validates the configuration and builds a relay.
@@ -126,9 +133,16 @@ func New(cfg Config, logger *slog.Logger) (*Relay, error) {
 			IdleConnTimeout:       90 * time.Second,
 			ResponseHeaderTimeout: readTimeout,
 		}
+		targets := make(map[string]*url.URL, len(up.Targets))
+		for name, raw := range up.Targets {
+			targets[name], _ = url.Parse(raw)
+		}
 		r.upstreams[up.Name] = &upstream{
-			Upstream: up,
-			base:     base,
+			Upstream:   up,
+			base:       base,
+			targets:    targets,
+			slots:      make(chan struct{}, cmp.Or(up.MaxConcurrent, DefaultMaxConcurrent)),
+			maxSeconds: cmp.Or(up.MaxSeconds, DefaultMaxSeconds),
 			client: &http.Client{Transport: upstreamTransport, Timeout: readTimeout,
 				CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("upstream redirects are not followed") }},
 		}
@@ -224,7 +238,9 @@ func (r *Relay) serve(ctx context.Context) error {
 
 // ServeHTTP answers one proxy read from the tunnel. The Host names the
 // upstream; the path is forwarded under the upstream URL when its route is a
-// documented read. One audit line records every decision with the read id
+// documented read. For a pprof upstream the first path segment names the
+// target process and the query is checked against the configured caps. One
+// audit line records every decision with the read id
 // Perfloop gave it, `<session id>/<tool call ref>`, which names the
 // transcript turn that asked; a read no tool call made has none.
 func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -250,9 +266,34 @@ func (r *Relay) forward(w http.ResponseWriter, req *http.Request) (int, string, 
 	if p := req.URL.Path; p == "" || p[0] != '/' || p != path.Clean(p) {
 		return refuse(w, http.StatusBadRequest, "path is not clean"), "path", nil
 	}
-	name, ok := route(up.Kind, req.URL.Path)
+	base, rest, query := up.base, req.URL.Path, req.URL.RawQuery
+	if up.Kind == "pprof" {
+		// The target and the query are checked here, before any request, in
+		// the same place as the route: the target map and the caps are the
+		// customer's control over which process runs a profile and for how
+		// long. The query forwarded is the one checked, not the raw bytes.
+		var name string
+		var ok bool
+		if name, rest, ok = target(req.URL.Path); !ok || up.targets[name] == nil {
+			return refuse(w, http.StatusNotFound, "unknown target"), "unknown-target", nil
+		}
+		base = up.targets[name]
+	}
+	name, ok := route(up.Kind, rest)
 	if !ok {
 		return refuse(w, http.StatusForbidden, "route is not a documented read"), "route", nil
+	}
+	if up.Kind == "pprof" {
+		var err error
+		if query, err = pprofQuery(name, req.URL.RawQuery, up.maxSeconds); err != nil {
+			return refuse(w, http.StatusBadRequest, err.Error()), "query", nil
+		}
+		select {
+		case up.slots <- struct{}{}:
+			defer func() { <-up.slots }()
+		default:
+			return refuse(w, http.StatusTooManyRequests, "profile reads in flight are at the configured cap"), "busy", nil
+		}
 	}
 	// One read is bounded end to end on both sides: the upstream client's
 	// timeout, and the same deadline on the response write, so a tunnel peer
@@ -262,9 +303,9 @@ func (r *Relay) forward(w http.ResponseWriter, req *http.Request) (int, string, 
 	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(readTimeout)); err != nil {
 		return refuse(w, http.StatusInternalServerError, "write deadline is not supported"), "path", err
 	}
-	target := *up.base
-	target.Path = path.Join(up.base.Path, req.URL.Path)
-	target.RawQuery = req.URL.RawQuery
+	target := *base
+	target.Path = path.Join(base.Path, rest)
+	target.RawQuery = query
 	out, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), http.NoBody)
 	if err != nil {
 		return refuse(w, http.StatusBadRequest, "request could not be built"), "path", err
@@ -310,7 +351,11 @@ func (r *Relay) forward(w http.ResponseWriter, req *http.Request) (int, string, 
 	return resp.StatusCode, name, nil
 }
 
+// refuse answers a read the relay will not forward. The error header names
+// the relay as the author, so a reader can tell this 404 or 400 from one the
+// upstream itself returned.
 func refuse(w http.ResponseWriter, status int, reason string) int {
+	w.Header().Set(link.ErrorHeader, link.Refused)
 	http.Error(w, reason, status)
 	return status
 }

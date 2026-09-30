@@ -41,12 +41,28 @@ type Upstream struct {
 	// lowercase DNS label.
 	Name string `yaml:"name"`
 	// Kind selects the read routes the relay permits; routes.go lists the
-	// kinds (today prometheus, victoriametrics, and loki). It selects the read
-	// routes the relay permits.
+	// kinds (today prometheus, victoriametrics, loki, and pprof).
 	Kind string `yaml:"kind"`
 	// URL is the provider base: scheme, host, port, and an optional path
-	// prefix. The relay appends the proxy's request path to it.
+	// prefix. The relay appends the proxy's request path to it. A pprof
+	// upstream has Targets instead.
 	URL string `yaml:"url"`
+	// Targets are the processes of a pprof upstream: target name to the
+	// http(s) base of that process's net/http/pprof handler. Perfloop names
+	// one target per read as the first path segment; a name not listed here
+	// is refused. Each name is one lowercase DNS label.
+	Targets map[string]string `yaml:"targets"`
+	// MaxSeconds caps the `seconds` a pprof read may ask for, so a CPU
+	// profile cannot run longer than the customer allows. Zero means
+	// DefaultMaxSeconds. The bound is link.MaxProfileSeconds.
+	MaxSeconds int `yaml:"max_seconds"`
+	// MaxConcurrent caps the pprof reads in flight on this upstream across
+	// all of its targets, per relay process; a further read is refused at
+	// once with status 429. Perfloop spreads reads over every relay a tenant
+	// runs with the same token, so N relay processes admit N times this cap.
+	// The customer controls that count. Zero means DefaultMaxConcurrent. The
+	// bound is MaxConcurrentBound.
+	MaxConcurrent int `yaml:"max_concurrent"`
 	// Headers are added to every upstream request, for example an
 	// Authorization header holding a read token. They replace any header of
 	// the same name from the proxy.
@@ -55,6 +71,20 @@ type Upstream struct {
 	// instead of the system roots.
 	CA string `yaml:"ca"`
 }
+
+const (
+	// DefaultMaxSeconds is the `seconds` cap of a pprof upstream that sets
+	// none: net/http/pprof's own default CPU profile length. The largest cap
+	// a config may set is link.MaxProfileSeconds.
+	DefaultMaxSeconds = 30
+	// DefaultMaxConcurrent is the in-flight cap of a pprof upstream that
+	// sets none: one profile at a time per upstream.
+	DefaultMaxConcurrent = 1
+	// MaxConcurrentBound is the largest max_concurrent a config may set. It
+	// is a config bound on how many processes profile at once, not a tunnel
+	// property: the relay keeps two tunnels of maxStreams each.
+	MaxConcurrentBound = 8
+)
 
 // Load reads, expands, and strictly parses a relay configuration. New
 // validates it.
@@ -102,9 +132,34 @@ func (c Config) Validate() error {
 		if _, ok := base(up.Kind); !ok {
 			return fmt.Errorf("upstream %s: kind %q is not supported", up.Name, up.Kind)
 		}
-		u, err := url.Parse(up.URL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Path, "/") {
-			return fmt.Errorf("upstream %s: url must be an http(s) base without query, fragment, user info, or trailing slash", up.Name)
+		if up.Kind == "pprof" {
+			if up.URL != "" {
+				return fmt.Errorf("upstream %s: a pprof upstream names targets, not a url", up.Name)
+			}
+			if len(up.Targets) == 0 {
+				return fmt.Errorf("upstream %s: at least one target is required", up.Name)
+			}
+			for target, raw := range up.Targets {
+				if !link.ValidUpstreamName(target) {
+					return fmt.Errorf("upstream %s: target name %q must be one lowercase DNS label", up.Name, target)
+				}
+				if !validBase(raw) {
+					return fmt.Errorf("upstream %s: target %s: url must be an http(s) base without query, fragment, user info, or trailing slash", up.Name, target)
+				}
+			}
+			if up.MaxSeconds < 0 || up.MaxSeconds > link.MaxProfileSeconds {
+				return fmt.Errorf("upstream %s: max_seconds must be between 1 and %d", up.Name, link.MaxProfileSeconds)
+			}
+			if up.MaxConcurrent < 0 || up.MaxConcurrent > MaxConcurrentBound {
+				return fmt.Errorf("upstream %s: max_concurrent must be between 1 and %d", up.Name, MaxConcurrentBound)
+			}
+		} else {
+			if up.Targets != nil || up.MaxSeconds != 0 || up.MaxConcurrent != 0 {
+				return fmt.Errorf("upstream %s: targets, max_seconds, and max_concurrent apply only to kind pprof", up.Name)
+			}
+			if !validBase(up.URL) {
+				return fmt.Errorf("upstream %s: url must be an http(s) base without query, fragment, user info, or trailing slash", up.Name)
+			}
 		}
 		// Header names and values must be ones the HTTP client will send, and
 		// one wire header must have one value: `Authorization` and
@@ -140,6 +195,13 @@ func (c Config) level() (slog.Level, error) {
 func (c Config) Level() slog.Level {
 	level, _ := c.level()
 	return level
+}
+
+// validBase reports whether raw is an http(s) base the relay may append a
+// route to: scheme, host, port, and an optional path prefix, nothing else.
+func validBase(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == "" && !strings.HasSuffix(u.Path, "/")
 }
 
 // apiURL is the API origin: an https URL with a host and nothing else. The

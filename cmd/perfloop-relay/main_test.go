@@ -25,7 +25,7 @@ func TestPrintRoutesPrintsTheTableOrValidatesError(t *testing.T) {
 	}
 	bad := filepath.Join(t.TempDir(), "relay.yaml")
 	for body, want := range map[string]string{
-		"api: https://app.perfloop.ai\ntoken: x\nupstreams:\n  - name: vm\n    kind: pprof\n    url: http://vm.internal\n":                           `kind "pprof" is not supported`,
+		"api: https://app.perfloop.ai\ntoken: x\nupstreams:\n  - name: vm\n    kind: pyroscope\n    url: http://vm.internal\n":                       `kind "pyroscope" is not supported`,
 		"api: https://app.perfloop.ai\ntoken: x\nlog_level: nonsense\nupstreams:\n  - name: vm\n    kind: prometheus\n    url: http://vm.internal\n": `log_level:`,
 	} {
 		if err := os.WriteFile(bad, []byte(body), 0o600); err != nil {
