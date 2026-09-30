@@ -37,6 +37,25 @@ const (
 	// it, its tunnel token covers it, and the relay logs it and drops it
 	// before the upstream request. It is absent on a read no tool call made.
 	RequestIDHeader = "Perfloop-Request-Id"
+	// ErrorHeader marks a response that is not the provider's: Perfloop made
+	// it (Unavailable) or the relay refused the read (Refused). A reader can
+	// tell either from provider bytes; the API and the proxy act only on
+	// Unavailable, and a relay refusal reaches the adapter with its status.
+	ErrorHeader = "Perfloop-Relay-Error"
+	// Unavailable is the value Perfloop sets when no relay could serve the
+	// read: no tunnel, or a token the replica does not recognize.
+	Unavailable = "1"
+	// Refused is the value the relay sets on its own refusals: an unknown
+	// upstream or target, a route or query outside the allowlist, or the
+	// in-flight cap. The status says which.
+	Refused = "relay"
+	// MaxProfileSeconds is the longest `seconds` a pprof read may ask for on
+	// either end: the relay refuses a larger `max_seconds` in its config, and
+	// Perfloop's pprof adapter refuses a longer capture before the tunnel. A
+	// profile read crosses two one-minute deadlines, the controller's remote
+	// client and the proxy's read; 45 leaves them 15 seconds for the tunnel
+	// and the bytes.
+	MaxProfileSeconds = 45
 )
 
 // hopHeaders never cross a tunnel in either direction (RFC 9110 § 7.6.1),

@@ -479,3 +479,116 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	defer l.mu.Unlock()
 	return l.w.Write(p)
 }
+
+// A pprof upstream forwards one documented route to one named process, with
+// the checked query only. Every other target, route, method, and query key is
+// refused before the process sees a request, and each refusal is marked as
+// the relay's own.
+func TestPprofReadsReachOnlyNamedTargetsAndDocumentedRoutes(t *testing.T) {
+	var mu sync.Mutex
+	var calls []string
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		mu.Lock()
+		calls = append(calls, req.URL.RequestURI()+" auth="+req.Header.Get("Authorization"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/octet-stream")
+		io.WriteString(w, "pprof-bytes")
+	}))
+	defer provider.Close()
+	term := newTerminator(t, Upstream{Name: "go", Kind: "pprof", MaxSeconds: 5,
+		Targets: map[string]string{"api-1": provider.URL, "api-2": provider.URL + "/internal"},
+		Headers: map[string]string{"Authorization": "Bearer local-token"}})
+	term.run(t)
+	term.waitTunnels(t, tunnels)
+
+	if resp := term.read(t, "go", "/api-1/debug/pprof/profile?seconds=2", "Authorization", "Bearer from-perfloop"); resp.status != http.StatusOK || resp.body != "pprof-bytes" || resp.header.Get(link.ErrorHeader) != "" {
+		t.Fatalf("profile: %+v", resp)
+	}
+	if resp := term.read(t, "go", "/api-2/debug/pprof/heap"); resp.status != http.StatusOK {
+		t.Fatalf("heap: %+v", resp)
+	}
+	if resp := term.read(t, "go", "/api-1/debug/pprof/goroutine?seconds=1"); resp.status != http.StatusOK {
+		t.Fatalf("goroutine delta: %+v", resp)
+	}
+	want := []string{
+		"/debug/pprof/profile?seconds=2 auth=Bearer local-token",
+		"/internal/debug/pprof/heap auth=Bearer local-token",
+		"/debug/pprof/goroutine?seconds=1 auth=Bearer local-token",
+	}
+	mu.Lock()
+	got := append([]string(nil), calls...)
+	mu.Unlock()
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("process saw %q, want %q", got, want)
+	}
+	for _, refused := range []struct {
+		path   string
+		status int
+	}{
+		{"/api-3/debug/pprof/heap", http.StatusNotFound},
+		{"/debug/pprof/heap", http.StatusNotFound},
+		{"/api-1", http.StatusNotFound},
+		{"/api-1/debug/pprof/cmdline", http.StatusForbidden},
+		{"/api-1/debug/pprof/symbol", http.StatusForbidden},
+		{"/api-1/debug/pprof/trace?seconds=1", http.StatusForbidden},
+		{"/api-1/debug/pprof/", http.StatusBadRequest},
+		{"/api-1/debug/pprof", http.StatusForbidden},
+		{"/api-1/metrics", http.StatusForbidden},
+		{"/api-1/debug/pprof/profile", http.StatusBadRequest},
+		{"/api-1/debug/pprof/profile?seconds=6", http.StatusBadRequest},
+		{"/api-1/debug/pprof/profile?seconds=2&debug=1", http.StatusBadRequest},
+		{"/api-1/debug/pprof/goroutine?debug=2", http.StatusBadRequest},
+		{"/api-1/debug/pprof/heap?gc=1", http.StatusBadRequest},
+	} {
+		if resp := term.read(t, "go", refused.path); resp.status != refused.status || resp.header.Get(link.ErrorHeader) != link.Refused {
+			t.Fatalf("%s: %d %q, want %d marked as the relay's own refusal", refused.path, resp.status, resp.body, refused.status)
+		}
+	}
+	mu.Lock()
+	n := len(calls)
+	mu.Unlock()
+	if n != len(want) {
+		t.Fatalf("process saw %d requests after refusals, want %d", n, len(want))
+	}
+}
+
+// The in-flight cap is per upstream and refuses at once: a second profile
+// while one runs gets a marked 429 and the process never sees it; the first
+// completes.
+func TestPprofConcurrencyCapRefusesAtOnce(t *testing.T) {
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	// Free the blocked provider on every exit, so a failed assertion cannot
+	// leave the first read hanging and the test binary with it.
+	releaseAll := sync.OnceFunc(func() { close(release) })
+	defer releaseAll()
+	var calls atomic.Int64
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		started <- struct{}{}
+		<-release
+		io.WriteString(w, "pprof-bytes")
+	}))
+	defer provider.Close()
+	term := newTerminator(t, Upstream{Name: "go", Kind: "pprof", Targets: map[string]string{"api-1": provider.URL, "api-2": provider.URL}})
+	term.run(t)
+	term.waitTunnels(t, tunnels)
+
+	first := make(chan reply, 1)
+	go func() { first <- term.read(t, "go", "/api-1/debug/pprof/profile?seconds=1") }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first profile never reached the process")
+	}
+	if resp := term.read(t, "go", "/api-2/debug/pprof/heap"); resp.status != http.StatusTooManyRequests || resp.header.Get(link.ErrorHeader) != link.Refused || calls.Load() != 1 {
+		t.Fatalf("second read while one is in flight: %+v, process calls %d", resp, calls.Load())
+	}
+	releaseAll()
+	if resp := <-first; resp.status != http.StatusOK || resp.body != "pprof-bytes" {
+		t.Fatalf("first profile: %+v", resp)
+	}
+	if resp := term.read(t, "go", "/api-2/debug/pprof/heap"); resp.status != http.StatusOK || calls.Load() != 2 {
+		t.Fatalf("read after the slot is free: %+v, process calls %d", resp, calls.Load())
+	}
+}

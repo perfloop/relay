@@ -3,6 +3,7 @@ package relay
 import (
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -16,11 +17,15 @@ func FuzzRouteNeverAdmitsWritesOrAdmin(f *testing.F) {
 		"/api/v1/query", "/select/0/prometheus/api/v1/query_range", "/api/v1/label/x/values", "/admin-cluster/api/v1/labels",
 		"/api/v1/admin/tsdb/delete_series", "/api/v1/admin/tsdb/snapshot/api/v1/query", "/api/v1/write/api/v1/labels",
 		"/loki/api/v1/push", "/loki/api/v1/push/loki/api/v1/query", "/api/v1/query/../write", "/loki/api/v1/query",
+		"/debug/pprof/profile", "/debug/pprof/heap", "/debug/pprof/cmdline", "/debug/pprof/symbol", "/debug/pprof/trace",
+		"/debug/pprof/threadcreate", "/debug/pprof/", "/api-1/debug/pprof/heap", "/debug/pprof/heap/debug/pprof/profile",
 	} {
 		f.Add("prometheus", seed)
 		f.Add("loki", seed)
+		f.Add("pprof", seed)
 	}
 	reads := map[string]bool{"query": true, "query_range": true, "labels": true, "series": true, "metadata": true}
+	pprofReads := map[string]bool{"profile": true, "heap": true, "allocs": true, "goroutine": true, "mutex": true, "block": true}
 	f.Fuzz(func(t *testing.T, kind, path string) {
 		name, ok := route(kind, path)
 		if !ok {
@@ -30,9 +35,18 @@ func FuzzRouteNeverAdmitsWritesOrAdmin(f *testing.F) {
 		if kind == "loki" {
 			base = "/loki/api/v1/"
 		}
+		if kind == "pprof" {
+			base = "/debug/pprof/"
+		}
 		rest, atStart := strings.CutPrefix(path, base)
 		if !atStart {
 			t.Fatalf("admitted %s %s as %s", kind, path, name)
+		}
+		if kind == "pprof" {
+			if !pprofReads[rest] || rest != name {
+				t.Fatalf("admitted %s %s as %s", kind, path, name)
+			}
+			return
 		}
 		if label, ok := strings.CutPrefix(rest, "label/"); ok {
 			labelName, isLabel := strings.CutSuffix(label, "/values")
@@ -62,6 +76,14 @@ func TestRouteAdmitsExactlyBaseAndOneReadRoute(t *testing.T) {
 		{"loki", "/api/v1/query", ""},
 		{"loki", "/loki/api/v1/series", ""},
 		{"prometheus", "/api/v1/admin/tsdb/snapshot", ""},
+		{"pprof", "/debug/pprof/profile", "profile"},
+		{"pprof", "/debug/pprof/block", "block"},
+		{"pprof", "/debug/pprof/cmdline", ""},
+		{"pprof", "/debug/pprof/symbol", ""},
+		{"pprof", "/debug/pprof/trace", ""},
+		{"pprof", "/debug/pprof/", ""},
+		{"pprof", "/api/v1/query", ""},
+		{"prometheus", "/debug/pprof/heap", ""},
 	} {
 		if got, ok := route(tc.kind, tc.path); got != tc.want || ok != (tc.want != "") {
 			t.Errorf("route(%s, %s) = %q, %v; want %q", tc.kind, tc.path, got, ok, tc.want)
@@ -117,3 +139,51 @@ func TestRoutesPrintsTheTableAndNoSecret(t *testing.T) {
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+// A pprof query carries `seconds` and nothing else. `profile` must name its
+// length so the upstream default cannot exceed the cap; the other routes may
+// take a snapshot without it. The forwarded query is the checked one.
+func TestPprofQueryAdmitsOnlyCappedSeconds(t *testing.T) {
+	for _, tc := range []struct {
+		route, query, want string
+		ok                 bool
+	}{
+		{"profile", "seconds=5", "seconds=5", true},
+		{"profile", "seconds=30", "seconds=30", true},
+		{"heap", "", "", true},
+		{"heap", "seconds=3", "seconds=3", true},
+		{"profile", "", "", false},
+		{"profile", "seconds=31", "", false},
+		{"profile", "seconds=0", "", false},
+		{"profile", "seconds=-1", "", false},
+		{"profile", "seconds=05", "", false},
+		{"profile", "seconds=+5", "", false},
+		{"profile", "seconds=5&seconds=5", "", false},
+		{"profile", "seconds=5&debug=1", "", false},
+		{"goroutine", "debug=2", "", false},
+		{"heap", "gc=1", "", false},
+		{"heap", "seconds=%zz", "", false},
+	} {
+		got, err := pprofQuery(tc.route, tc.query, 30)
+		if (err == nil) != tc.ok || got != tc.want {
+			t.Errorf("pprofQuery(%s, %q) = %q, %v; want %q ok=%v", tc.route, tc.query, got, err, tc.want, tc.ok)
+		}
+	}
+}
+
+// The seconds check never admits a value outside 1..max, whatever the bytes.
+func FuzzPprofQuerySecondsStayWithinCap(f *testing.F) {
+	for _, seed := range []string{"seconds=5", "seconds=99999999999999999999", "seconds=1e3", "seconds=5&x=1", "seconds=5;seconds=6", "seconds=%35"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		query, err := pprofQuery("profile", raw, 30)
+		if err != nil {
+			return
+		}
+		n, convErr := strconv.Atoi(strings.TrimPrefix(query, "seconds="))
+		if !strings.HasPrefix(query, "seconds=") || convErr != nil || n < 1 || n > 30 {
+			t.Fatalf("admitted %q as %q", raw, query)
+		}
+	})
+}
