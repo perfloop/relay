@@ -15,6 +15,7 @@
 package link
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -38,8 +39,17 @@ const (
 	RequestIDHeader = "Perfloop-Request-Id"
 )
 
-// hopHeaders never cross a tunnel in either direction (RFC 9110 § 7.6.1).
-var hopHeaders = []string{"Connection", "Keep-Alive", "Proxy-Connection", "Transfer-Encoding", "Upgrade", "Te", "Trailer"}
+// hopHeaders never cross a tunnel in either direction (RFC 9110 § 7.6.1),
+// nor do proxy credentials, which belong to the hop that used them.
+var hopHeaders = []string{"Connection", "Keep-Alive", "Proxy-Connection", "Proxy-Authorization", "Proxy-Authenticate", "Transfer-Encoding", "Upgrade", "Te", "Trailer"}
+
+// ForwardedHeaders are the request headers a relay copies from a read onto
+// the upstream request. They are exactly what Perfloop sends on a read:
+// Accept and X-Scope-OrgID (the Loki tenant) from its provider adapters,
+// Accept-Encoding and User-Agent from its HTTP client. Every other request
+// header stops at the relay; the customer's configured headers are set after
+// these and replace any of the same name.
+var ForwardedHeaders = []string{"Accept", "Accept-Encoding", "User-Agent", "X-Scope-OrgID"}
 
 // StripHop removes the hop-by-hop headers from a request or response header
 // that is about to cross a tunnel. Both ends call it on the way in and on the
@@ -72,6 +82,18 @@ func ValidUpstreamName(name string) bool {
 // Every referenced variable must be set; the error names the missing ones. A
 // literal `$` cannot appear in these files; put such a value in a variable.
 func ExpandEnv(data []byte) ([]byte, error) {
+	// os.Expand drops an unterminated `${` and everything after it; a file
+	// with one is a mistake to report, never a shorter file to run.
+	for rest := string(data); ; {
+		i := strings.Index(rest, "${")
+		if i < 0 {
+			break
+		}
+		rest = rest[i+2:]
+		if !strings.Contains(rest, "}") {
+			return nil, errors.New("config has an unterminated ${ reference")
+		}
+	}
 	missing := map[string]bool{}
 	out := os.Expand(string(data), func(name string) string {
 		value, ok := os.LookupEnv(name)

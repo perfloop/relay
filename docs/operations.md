@@ -17,14 +17,15 @@ perfloop-relay -config relay.yaml -print-routes
 ```
 
 loads and validates the configuration and prints, per upstream, its kind,
-its URL, the names of its configured headers, and every request the relay
-will forward, then exits. An invalid configuration exits non-zero with the
+its URL, the request headers it passes from Perfloop, the names of its
+configured headers, and every request the relay will forward, then exits. An invalid configuration exits non-zero with the
 validation error. Header values and the token are not printed. Example:
 
 ```
 upstream vm
   kind    victoriametrics
   url     http://vm.internal:8428/select/0/prometheus
+  passes  Accept, Accept-Encoding, User-Agent, X-Scope-OrgID from Perfloop; every other request header is dropped
   headers Authorization, X-Scope-OrgID (values not shown)
   forwards GET, with the query string unchanged, to:
     http://vm.internal:8428/select/0/prometheus/api/v1/query

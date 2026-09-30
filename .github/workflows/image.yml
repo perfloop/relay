@@ -1,11 +1,11 @@
 name: Image
 
-# Builds and publishes the relay image to ghcr.io/perfloop/relay. A pull
-# request build proves the Dockerfile still builds; a push to main publishes
-# the image tagged with the commit it was built from (the short and the full
-# SHA), signs the digest with keyless cosign, and attaches an SBOM. There is
-# no scheduled or manual publish: one main-branch build is the sole publisher
-# for a tag.
+# Builds the relay image on every pull request and publishes it on every push
+# to main, to ghcr.io/perfloop/relay, tagged with the commit it was built from
+# (the short and the full SHA), signed with keyless cosign, with an SBOM
+# attached. The two are separate jobs so a pull request build runs with
+# read-only permissions: only the main-branch job can write a package or
+# obtain an OIDC token. There is no scheduled or manual publish.
 #
 # The registry credential is the workflow's own GITHUB_TOKEN; the signing
 # identity is the workflow's OIDC token. No long-lived key is held anywhere.
@@ -27,15 +27,32 @@ permissions:
 
 jobs:
   build:
+    # A pull request proves the Dockerfile still builds. Nothing is pushed.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
-      packages: write # publish to ghcr.io on main; a pull request never pushes
-      id-token: write # keyless cosign on main
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
+      - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: false
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write # ghcr.io/perfloop/relay
+      id-token: write # keyless cosign
     env:
       IMAGE: ghcr.io/perfloop/relay
-      PUBLISH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
@@ -49,14 +66,11 @@ jobs:
           {
             echo "tags<<EOF"
             echo "${IMAGE}:${short_sha}"
-            if [ "${PUBLISH}" = "true" ]; then
-              echo "${IMAGE}:${full_sha}"
-            fi
+            echo "${IMAGE}:${full_sha}"
             echo "EOF"
           } >>"$GITHUB_OUTPUT"
 
-      - if: env.PUBLISH == 'true'
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -70,16 +84,14 @@ jobs:
           context: .
           file: Dockerfile
           platforms: linux/amd64
-          push: ${{ env.PUBLISH == 'true' }}
+          push: true
           tags: ${{ steps.tags.outputs.tags }}
           # A published image carries a pinned Syft SPDX package inventory.
-          sbom: ${{ env.PUBLISH == 'true' && 'generator=docker/buildkit-syft-scanner@sha256:79e7b013cbec16bbb436f312819a49a4a57752b2270c1a9332ae1a10fcc82a68' || 'false' }}
+          sbom: generator=docker/buildkit-syft-scanner@sha256:79e7b013cbec16bbb436f312819a49a4a57752b2270c1a9332ae1a10fcc82a68
 
-      - if: env.PUBLISH == 'true'
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
 
-      - if: env.PUBLISH == 'true'
-        name: Sign the published digest
+      - name: Sign the published digest
         # Keyless: the signing identity is this workflow's OIDC token, so a
         # verifier can require exactly this repository, workflow, and branch
         # (docs/image.md). No signing key exists.
@@ -87,8 +99,7 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
 
-      - if: env.PUBLISH == 'true'
-        name: Report digest
+      - name: Report digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.tags.outputs.tags }}

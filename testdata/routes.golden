@@ -1,6 +1,7 @@
 upstream vm
   kind    victoriametrics
   url     http://vm.internal:8428/select/0/prometheus
+  passes  Accept, Accept-Encoding, User-Agent, X-Scope-OrgID from Perfloop; every other request header is dropped
   headers Authorization, X-Scope-OrgID (values not shown)
   forwards GET, with the query string unchanged, to:
     http://vm.internal:8428/select/0/prometheus/api/v1/query
@@ -13,6 +14,7 @@ upstream vm
 upstream logs
   kind    loki
   url     https://loki.internal
+  passes  Accept, Accept-Encoding, User-Agent, X-Scope-OrgID from Perfloop; every other request header is dropped
   forwards GET, with the query string unchanged, to:
     https://loki.internal/loki/api/v1/query
     https://loki.internal/loki/api/v1/query_range

@@ -6,6 +6,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/perfloop/relay/link"
 )
 
 // base returns the provider API base for a supported kind. It is the one
@@ -65,8 +67,9 @@ func route(kind, path string) (string, bool) {
 }
 
 // Routes writes what a validated configuration permits, one upstream at a
-// time: the kind, the URL the relay forwards to, the names of the headers it
-// adds, and every request the relay will forward. The relay forwards the
+// time: the kind, the URL the relay forwards to, the request headers it passes
+// from Perfloop, the names of the headers it adds, and every request the relay
+// will forward. The relay forwards the
 // query string of a permitted route unchanged; the proxy validated it.
 // Nothing else is forwarded. Secrets are never written: header values and the
 // token stay out. The listing is written whole, in one write, so a failed
@@ -83,6 +86,7 @@ func Routes(w io.Writer, cfg Config) error {
 		fmt.Fprintf(&out, "upstream %s\n", up.Name)
 		fmt.Fprintf(&out, "  kind    %s\n", up.Kind)
 		fmt.Fprintf(&out, "  url     %s\n", up.URL)
+		fmt.Fprintf(&out, "  passes  %s from Perfloop; every other request header is dropped\n", strings.Join(link.ForwardedHeaders, ", "))
 		headers := slices.Sorted(maps.Keys(up.Headers))
 		if len(headers) > 0 {
 			fmt.Fprintf(&out, "  headers %s (values not shown)\n", strings.Join(headers, ", "))

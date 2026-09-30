@@ -34,16 +34,11 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      GOLANGCI_LINT_VERSION: v2.11.4
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version-file: go.mod
-      - name: Install golangci-lint
-        run: |
-          curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/${GOLANGCI_LINT_VERSION}/install.sh" |
-            sh -s -- -b "$(go env GOPATH)/bin" "${GOLANGCI_LINT_VERSION}"
-      - name: Lint
-        run: golangci-lint run ./...
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a
+        with:
+          version: v2.11.4
