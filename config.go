@@ -40,7 +40,8 @@ type Upstream struct {
 	// Name is the `relay://<name>` endpoint that Setup registers. It is one
 	// lowercase DNS label.
 	Name string `yaml:"name"`
-	// Kind is prometheus, victoriametrics, or loki. It selects the read
+	// Kind selects the read routes the relay permits; routes.go lists the
+	// kinds (today prometheus, victoriametrics, and loki). It selects the read
 	// routes the relay permits.
 	Kind string `yaml:"kind"`
 	// URL is the provider base: scheme, host, port, and an optional path

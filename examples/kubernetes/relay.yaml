@@ -18,7 +18,7 @@ data:
     token: ${PERFLOOP_RELAY_TOKEN}
     upstreams:
       - name: <upstream-name>
-        kind: <prometheus|victoriametrics|loki>
+        kind: <kind>   # one of the kinds routes.go lists: prometheus, victoriametrics, loki
         url: http://<upstream-service>.<upstream-namespace>.svc:<upstream-port>
         headers:
           Authorization: Bearer ${UPSTREAM_READ_TOKEN}
