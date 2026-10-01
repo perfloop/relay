@@ -28,12 +28,13 @@ upstreams:
     # leading or trailing -. Names must be unique in the file.
     name: vm
     # One of the kinds routes.go lists: today prometheus, victoriametrics,
-    # or loki. Selects the read routes
+    # loki, or pprof. Selects the read routes
     # (docs/security.md, "What the relay forwards").
     kind: victoriametrics
     # The provider base: scheme, host, port, and an optional path prefix.
     # No user info, query, fragment, or trailing slash. The read's path is
-    # appended to it.
+    # appended to it. Required for every kind but pprof, which names
+    # targets instead.
     url: http://vmselect.monitoring.svc:8481/select/0/prometheus
     # Optional. Headers added to every request to this upstream; they
     # replace any header of the same name that Perfloop sent. Values are
@@ -46,7 +47,37 @@ upstreams:
   - name: logs
     kind: loki
     url: https://loki-gateway.monitoring.svc
+  - name: go
+    kind: pprof
+    # Required for kind pprof, at least one. The Go processes this upstream
+    # may profile: target name to the http(s) base of that process's
+    # net/http/pprof handler, with the same URL rules as `url`. Each name is
+    # one lowercase DNS label. Perfloop names one target per read; a name not
+    # listed here is refused.
+    targets:
+      api-1: http://api-1.prod.svc:6060
+      api-2: http://api-2.prod.svc:6060/internal
+    # Optional, kind pprof only. The longest `seconds` a read may ask for,
+    # 1 to 45. Default 30, net/http/pprof's own CPU profile length.
+    max_seconds: 10
+    # Optional, kind pprof only. Profile reads in flight on this upstream,
+    # across all of its targets, per relay process; 1 to 8. Default 1. A
+    # further read is refused with status 429.
+    max_concurrent: 2
 ```
 
+## pprof upstreams
+
+A `pprof` upstream reads `net/http/pprof` from Go processes you name. It has
+`targets` instead of `url`; `targets`, `max_seconds`, and `max_concurrent`
+are refused on every other kind. The relay forwards `GET` to exactly these
+routes under each target's base: `/debug/pprof/profile`, `heap`, `allocs`,
+`goroutine`, `mutex`, and `block`. `seconds` is the only query key the relay
+accepts: the capture length for `profile`, which must carry it, and an
+optional delta window for the other routes. It is one integer from 1 to
+`max_seconds`. Every other key, `debug` and `gc` included, is refused, so only
+the binary profile leaves the process. `-print-routes` prints the targets and
+both caps.
+
 The validation rules are in `config.go`, `Validate`; `config_test.go` lists
-every refused shape.
+every refused shape. The pprof query rules are in `routes.go`, `pprofQuery`.

@@ -6,11 +6,11 @@ public internet cannot reach. This repository is the complete source of what
 runs there. The image Perfloop publishes is built from it, by the workflow in
 this repository, and is tagged with the commit it was built from.
 
-Sources the relay reads today: Prometheus, VictoriaMetrics, and Loki. Go
-pprof and Pyroscope are next. Each kind is one table of read routes in
-`routes.go`, and a kind the relay does not know is refused when it starts.
+Sources the relay reads today: Prometheus, VictoriaMetrics, Loki, and Go
+pprof. Each kind is one table of read routes in `routes.go`, and a kind the
+relay does not know is refused when it starts.
 
-756 lines of Go outside tests, three runtime dependencies (`coder/websocket`,
+947 lines of Go outside tests, three runtime dependencies (`coder/websocket`,
 `go.yaml.in/yaml/v3`, `golang.org/x/net`): read it in an afternoon.
 
 ## What it does

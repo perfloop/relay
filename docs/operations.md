@@ -18,7 +18,7 @@ perfloop-relay -config relay.yaml -print-routes
 ```
 
 loads and validates the configuration and prints, per upstream, its kind,
-its URL, the request headers it passes from Perfloop, the names of its
+its URL (for `pprof`, its targets and caps), the request headers it passes from Perfloop, the names of its
 configured headers, and every request the relay will forward, then exits. An invalid configuration exits non-zero with the
 validation error. Header values and the token are not printed. Example:
 
@@ -50,7 +50,7 @@ The relay writes one line per read, `msg: "relay read"`, with these fields:
 | `method`, `path` | The method and path as Perfloop sent them. The query string is not logged, in this field or in `error`. |
 | `request_id` | The Perfloop work behind the read, `<session id>/<tool call ref>`, from the `Perfloop-Request-Id` header. Empty for a read no tool call made, such as a connect check from Setup. |
 | `status` | The status the relay answered. |
-| `decision` | The read route that was forwarded (`query`, `labels`, ...), or why the read was refused: `unknown-upstream`, `method`, `path`, `route`, `upstream-error`, or `truncated`. |
+| `decision` | The read route that was forwarded (`query`, `labels`, ...), or why the read was refused: `unknown-upstream`, `method`, `path`, `route`, `upstream-error`, or `truncated`; for `pprof` also `unknown-target`, `query`, or `busy` (the `max_concurrent` cap). |
 | `ms` | Time spent on the read. |
 | `error` | The upstream error, if any, without the request URL (`relay.go`, `forward`). |
 

@@ -98,8 +98,13 @@ The documented read routes, per upstream kind:
 | --- | --- | --- |
 | `prometheus`, `victoriametrics` | `/api/v1/` | `query`, `query_range`, `labels`, `label/{name}/values`, `series`, `metadata` |
 | `loki` | `/loki/api/v1/` | `query`, `query_range`, `labels`, `label/{name}/values` |
+| `pprof` | `/<target>/debug/pprof/` | `profile`, `heap`, `allocs`, `goroutine`, `mutex`, `block` |
 
-`{name}` is one non-empty path segment. Admin, write, push, and delete routes
+`{name}` is one non-empty path segment. `<target>` is a name in the pprof
+upstream's `targets`; any other answers `404 unknown target`. A pprof read's
+query must be empty or exactly one `seconds` from 1 to the upstream's
+`max_seconds`, and `profile` must carry it; anything else answers `400`. A
+read past the upstream's `max_concurrent` answers `429`. Admin, write, push, and delete routes
 are not in the table and are refused before any upstream request; the tests in
 `routes_test.go` and `relay_test.go` include the cases `admin/tsdb/delete_series`,
 `admin/tsdb/snapshot`, `write`, `push`, and a `..` in the path.
