@@ -133,8 +133,10 @@ Loki). In the **Endpoint** field enter:
 relay://<upstream-name>
 ```
 
-Leave the credential empty; a relay source has none. For Loki, enter the
-tenant id if your Loki is multi-tenant. Complete the connection.
+Leave the credential empty, and for Loki leave the tenant empty too; Perfloop
+refuses both for a relay source. A multi-tenant Loki takes its tenant from an
+`X-Scope-OrgID` entry in the upstream's `headers` in `relay.yaml` (step 3).
+Complete the connection.
 
 Checkpoint: Setup shows the source as connected, and the relay log shows the
 connection check as a read:
