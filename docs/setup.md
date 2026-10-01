@@ -126,8 +126,8 @@ Two lines with `"msg":"tunnel open","api":"app.perfloop.ai"`.
 ## 6. Register the source in Perfloop
 
 In `https://app.perfloop.ai/t/<tenant>/setup`, in the **Model inputs** group,
-press **Connect <Provider>** for your kind (Prometheus, VictoriaMetrics, or
-Loki). In the **Endpoint** field enter:
+press **Connect <Provider>** for your kind (Prometheus, VictoriaMetrics, Loki,
+or Go pprof). In the **Endpoint** field enter:
 
 ```
 relay://<upstream-name>
@@ -136,7 +136,8 @@ relay://<upstream-name>
 Leave the credential empty, and for Loki leave the tenant empty too; Perfloop
 refuses both for a relay source. A multi-tenant Loki takes its tenant from an
 `X-Scope-OrgID` entry in the upstream's `headers` in `relay.yaml` (step 3).
-Complete the connection.
+For a `pprof` upstream, register one selector per target name from its
+`targets`; one connection holds at most eight. Complete the connection.
 
 Checkpoint: Setup shows the source as connected, and the relay log shows the
 connection check as a read:
