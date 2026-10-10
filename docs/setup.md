@@ -168,7 +168,7 @@ and Perfloop.
 | `-print-routes` exits non-zero | The file is invalid. | The last line names the field and the rule. |
 | No `tunnel open`; `tunnel ended` with a dial or TLS error | The relay cannot reach `app.perfloop.ai:443`. | Egress from the namespace, the NetworkPolicy, DNS, an egress proxy (`HTTPS_PROXY` must carry WebSockets), `api_ca` if TLS is re-signed. |
 | `perfloop refused tunnel: 401 Unauthorized` | The token is wrong or revoked. | Create a new token in Setup and replace the Secret's `token` key; the Deployment restarts on its own only if you roll it. |
-| `perfloop refused tunnel: 429` | This tenant already has the maximum tunnels on that API replica. | Another relay of yours is connected; stop the extra one or wait for it to end. |
+| `perfloop refused tunnel: 429` | This tenant already has the maximum number of open tunnels. | Another relay of yours is connected; stop the extra one or wait for it to end. |
 | Setup connection fails; relay log shows `"decision":"upstream-error"` | The relay reached the tunnel but not the upstream. | `url`, the upstream's TLS (`ca`), and network reachability from the namespace to the upstream. |
 | Setup connection fails; relay log shows `"status":404,"decision":"unknown-upstream"` | The endpoint name in Setup does not match `upstreams[].name`. | Use exactly `relay://<upstream-name>`. |
 | Setup connection fails; relay log shows no line at all | The read never reached this relay. | Confirm the tunnels are open; the tenant in Setup is the tenant the token belongs to. |
@@ -178,5 +178,6 @@ and Perfloop.
 
 Create the new token in Setup, update the Secret's `token` key, roll the
 Deployment, confirm two `tunnel open` lines, then revoke the old token in
-Setup. Tunnels on the old token end within thirty seconds of revocation, so
-do it in that order to avoid a gap.
+Setup. Tunnels on the old token end within 40 seconds of revocation, so do
+it in that order to avoid a gap. To end them at once, stop the relays that
+still use the old token.

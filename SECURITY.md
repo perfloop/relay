@@ -8,5 +8,4 @@ public issue for a vulnerability.
 
 Supported: the `main` branch and the latest published image (`docs/image.md`).
 A fix lands on `main` and is published as a new image; you choose when to roll
-it, as with every relay change. This document makes no commitment beyond the
-address: no response time, embargo, or reward program is published here.
+it, as with every relay change.

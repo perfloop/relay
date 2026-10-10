@@ -31,8 +31,9 @@ relay does not know is refused when it starts.
   start. There is no shell, no exec route, and no remote update.
 - It does not inspect or rewrite upstream responses. Give each upstream a
   read-only token.
-- Revoking the relay token in Perfloop Setup ends its tunnels within thirty
-  seconds, enforced by the Perfloop API.
+- Revoking the relay token in Perfloop Setup ends its tunnels within 40
+  seconds, enforced by the Perfloop API. Stopping the relay ends its tunnels
+  at once.
 
 The full model, with the code that enforces each point:
 [docs/security.md](docs/security.md).

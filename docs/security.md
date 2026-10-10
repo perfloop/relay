@@ -146,10 +146,11 @@ never a short body that looks complete.
   you own; Perfloop's own validation of each read happens before the read
   reaches the relay, and the relay does not repeat or replace it.
 - When the relay token is revoked in Perfloop Setup, the Perfloop API ends
-  its open tunnels within thirty seconds (the API checks each tunnel's key on
-  that schedule; the relay takes no part in it), and every reconnect after
-  that is refused with `401 Unauthorized`, which the relay logs as
+  its open tunnels within 40 seconds (the API checks each tunnel's key on a
+  schedule; the relay takes no part in it), and every reconnect after that
+  is refused with `401 Unauthorized`, which the relay logs as
   `perfloop refused tunnel`.
+  Stopping the relay ends its tunnels at once.
 
 ## The relay token
 
@@ -159,6 +160,6 @@ The plaintext is shown once; Perfloop stores only its hash. The token lets a
 relay answer that tenant's validated reads and nothing else: the Perfloop API
 refuses it as a bearer everywhere but the tunnel route, so a token held in
 your network reads no Perfloop data. More than one relay may run with the
-same token; the API uses any live tunnel of the tenant and holds at most eight
-tunnels per tenant on each replica, refusing a further one with status 429
-until one ends.
+same token; the API uses any live tunnel of the tenant and accepts a limited
+number of tunnels per tenant, refusing another with status 429 until one
+ends.
