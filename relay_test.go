@@ -338,7 +338,8 @@ func TestTunnelHonorsHTTPSProxyAndUpstreamsDoNot(t *testing.T) {
 	egressURL, _ := url.Parse(egress.URL)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok") }))
 	defer provider.Close()
-	term := newTerminator(t, Upstream{Name: "vm", Kind: "prometheus", URL: provider.URL})
+	codehost := tcpCodehost(t, func(conn net.Conn) { _, _ = io.WriteString(conn, "direct") })
+	term := newTerminator(t, Upstream{Name: "vm", Kind: "prometheus", URL: provider.URL}, Upstream{Name: "git", Kind: "codehost", URL: codehost})
 	term.run(t, func(*http.Request) (*url.URL, error) { return egressURL, nil })
 	term.waitTunnels(t, tunnels)
 	if connects.Load() != int64(tunnels) {
@@ -348,6 +349,14 @@ func TestTunnelHonorsHTTPSProxyAndUpstreamsDoNot(t *testing.T) {
 	// through it would fail; a successful read proves upstreams bypass it.
 	if resp := term.read(t, "vm", "/api/v1/query"); resp.status != http.StatusOK || connects.Load() != int64(tunnels) {
 		t.Fatalf("read: %d, egress CONNECTs %d", resp.status, connects.Load())
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	resp, _ := openCodehost(t, ctx, term)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || string(body) != "direct" || connects.Load() != int64(tunnels) {
+		t.Fatalf("codehost: %q error=%v egress CONNECTs=%d; want direct bytes and only tunnel egress", body, err, connects.Load())
 	}
 }
 

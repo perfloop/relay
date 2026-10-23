@@ -1,8 +1,10 @@
 // Package relay is the customer end of a Perfloop relay tunnel. It runs
 // inside the customer network, opens WebSockets to the Perfloop API, and
 // answers the proxy's validated telemetry reads by forwarding them to the
-// configured upstreams. It collects nothing: no telemetry is stored or pushed,
-// no inbound port is opened, and provider URLs and credentials stay here.
+// configured upstreams, and carries opaque code-host TLS streams to fixed
+// destinations. It collects nothing: no telemetry is stored or pushed and no
+// inbound port is opened. Telemetry credentials stay here; code-host
+// credentials and authorization stay at the proxy, inside end-to-end TLS.
 // README.md describes the contract; package link owns the wire shape.
 package relay
 
@@ -38,10 +40,10 @@ const (
 	// maxStreams bounds the reads in flight on one tunnel; the tunnel's
 	// HTTP/2 settings enforce it, so Perfloop cannot exceed it.
 	maxStreams = 8
-	// maxResponseBytes bounds one upstream response. The proxy's own limits
+	// maxResponseBytes bounds one telemetry response. The proxy's own limits
 	// are far smaller; this stops a runaway provider from filling the tunnel.
 	maxResponseBytes = 32 << 20
-	// readTimeout bounds one upstream read end to end.
+	// readTimeout bounds one telemetry read end to end.
 	readTimeout = 2 * time.Minute
 	// dialTimeout bounds each step of opening a tunnel: dial, TLS, and the
 	// WebSocket handshake.
@@ -59,8 +61,8 @@ const (
 	maxFrame = 1 << 20
 )
 
-// Relay answers proxy reads from configured upstreams over tunnels to
-// Perfloop.
+// Relay answers proxy telemetry reads and carries code-host TLS streams to
+// configured upstreams over tunnels to Perfloop.
 type Relay struct {
 	cfg       Config
 	api       *url.URL
@@ -76,6 +78,9 @@ type upstream struct {
 	Upstream
 	// base is the provider URL of a metrics or logs upstream.
 	base *url.URL
+	// address is the fixed TCP destination of a codehost upstream. It comes
+	// only from configuration; a CONNECT request cannot choose a destination.
+	address string
 	// targets are the process bases of a pprof upstream, by target name.
 	targets map[string]*url.URL
 	// slots is the pprof in-flight cap: one token per permitted read.
@@ -113,6 +118,11 @@ func New(cfg Config, logger *slog.Logger) (*Relay, error) {
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	r := &Relay{cfg: cfg, api: api, upstreams: make(map[string]*upstream, len(cfg.Upstreams)), logger: logger, client: client}
 	for _, up := range cfg.Upstreams {
+		if up.Kind == "codehost" {
+			address, _ := codehostAddress(up.URL)
+			r.upstreams[up.Name] = &upstream{Upstream: up, address: address}
+			continue
+		}
 		base, _ := url.Parse(up.URL)
 		var tlsRoots *x509.CertPool
 		if up.CA != "" {
@@ -164,8 +174,9 @@ func loadRoots(path string) (*x509.CertPool, error) {
 
 // Run keeps the tunnels open until ctx ends. A tunnel that ends, for any
 // reason, is reopened with backoff; a tunnel that lasted a minute resets the
-// backoff. When ctx ends the tunnels close at once; Perfloop moves a read
-// whose tunnel failed before its response started to another tunnel.
+// backoff. When ctx ends the tunnels close at once, including every CONNECT
+// stream. Perfloop may move a telemetry read whose tunnel failed before its
+// response started to another tunnel. CONNECT bytes are never replayed.
 func (r *Relay) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	for i := range tunnels {
@@ -236,8 +247,10 @@ func (r *Relay) serve(ctx context.Context) error {
 	return errors.New("perfloop closed the tunnel")
 }
 
-// ServeHTTP answers one proxy read from the tunnel. The Host names the
-// upstream; the path is forwarded under the upstream URL when its route is a
+// ServeHTTP answers one proxy request from the tunnel. The Host names the
+// upstream. A codehost upstream accepts only a pathless HTTP/2 CONNECT and
+// streams opaque bytes to its fixed address. For telemetry, the path is
+// forwarded under the upstream URL when its route is a
 // documented read. For a pprof upstream the first path segment names the
 // target process and the query is checked against the configured caps. One
 // audit line records every decision with the read id
@@ -250,7 +263,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		"status", status, "decision", decision, "ms", time.Since(start).Milliseconds(), "error", err)
 	if decision == "truncated" {
 		// The upstream status is already sent. Abort so Perfloop and the
-		// proxy see a broken read, never a short body that looks complete.
+		// proxy see a broken read or stream, never a short body that looks complete.
 		panic(http.ErrAbortHandler)
 	}
 }
@@ -259,6 +272,9 @@ func (r *Relay) forward(w http.ResponseWriter, req *http.Request) (int, string, 
 	up := r.upstreams[req.Host]
 	if up == nil {
 		return refuse(w, http.StatusNotFound, "unknown upstream"), "unknown-upstream", nil
+	}
+	if up.Kind == "codehost" {
+		return connect(w, req, up.address)
 	}
 	if req.Method != http.MethodGet || req.ContentLength != 0 {
 		return refuse(w, http.StatusMethodNotAllowed, "only GET without a body is relayed"), "method", nil

@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/textproto"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/perfloop/relay/link"
@@ -29,7 +31,7 @@ type Config struct {
 	APICA string `yaml:"api_ca"`
 	// Token is the operator-issued relay token for this tenant.
 	Token string `yaml:"token"`
-	// Upstreams lists the sources this relay may read.
+	// Upstreams lists the sources this relay may reach.
 	Upstreams []Upstream `yaml:"upstreams"`
 	// LogLevel is debug, info, warn, or error.
 	LogLevel string `yaml:"log_level"`
@@ -40,12 +42,13 @@ type Upstream struct {
 	// Name is the `relay://<name>` endpoint that Setup registers. It is one
 	// lowercase DNS label.
 	Name string `yaml:"name"`
-	// Kind selects the read routes the relay permits; routes.go lists the
-	// kinds (today prometheus, victoriametrics, loki, and pprof).
+	// Kind selects the transport or read routes the relay permits; routes.go
+	// lists the kinds (prometheus, victoriametrics, loki, pprof, and codehost).
 	Kind string `yaml:"kind"`
 	// URL is the provider base: scheme, host, port, and an optional path
-	// prefix. The relay appends the proxy's request path to it. A pprof
-	// upstream has Targets instead.
+	// prefix for telemetry. The relay appends the proxy's request path to it.
+	// A codehost URL is an HTTPS origin with no path; the relay dials only its
+	// TCP address. A pprof upstream has Targets instead.
 	URL string `yaml:"url"`
 	// Targets are the processes of a pprof upstream: target name to the
 	// http(s) base of that process's net/http/pprof handler. Perfloop names
@@ -65,10 +68,11 @@ type Upstream struct {
 	MaxConcurrent int `yaml:"max_concurrent"`
 	// Headers are added to every upstream request, for example an
 	// Authorization header holding a read token. They replace any header of
-	// the same name from the proxy.
+	// the same name from the proxy. A codehost upstream refuses Headers.
 	Headers map[string]string `yaml:"headers"`
 	// CA is an optional PEM file trusted for this upstream's TLS certificate
-	// instead of the system roots.
+	// instead of the system roots. A codehost upstream refuses CA: its TLS
+	// goes end to end from the proxy, which owns certificate trust.
 	CA string `yaml:"ca"`
 }
 
@@ -157,7 +161,14 @@ func (c Config) Validate() error {
 			if up.Targets != nil || up.MaxSeconds != 0 || up.MaxConcurrent != 0 {
 				return fmt.Errorf("upstream %s: targets, max_seconds, and max_concurrent apply only to kind pprof", up.Name)
 			}
-			if !validBase(up.URL) {
+			if up.Kind == "codehost" {
+				if up.Headers != nil || up.CA != "" {
+					return fmt.Errorf("upstream %s: kind codehost does not accept headers or ca; TLS and credentials belong to the proxy", up.Name)
+				}
+				if _, err := codehostAddress(up.URL); err != nil {
+					return fmt.Errorf("upstream %s: %w", up.Name, err)
+				}
+			} else if !validBase(up.URL) {
 				return fmt.Errorf("upstream %s: url must be an http(s) base without query, fragment, user info, or trailing slash", up.Name)
 			}
 		}
@@ -202,6 +213,23 @@ func (c Config) Level() slog.Level {
 func validBase(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == "" && !strings.HasSuffix(u.Path, "/")
+}
+
+// codehostAddress derives the only TCP destination of a codehost upstream
+// from its configured HTTPS origin, never from a tunnel request. TLS stays
+// between the proxy and the code host; this address grants reachability only.
+func codehostAddress(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Opaque != "" || u.Path != "" || u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "#") {
+		return "", errors.New("codehost url must be an https origin without path, query, fragment, or user info")
+	}
+	port := u.Port()
+	if port == "" {
+		port = "443"
+	} else if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return "", errors.New("codehost url port must be between 1 and 65535")
+	}
+	return net.JoinHostPort(u.Hostname(), port), nil
 }
 
 // apiURL is the API origin: an https URL with a host and nothing else. The

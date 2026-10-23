@@ -4,6 +4,12 @@ An ordered procedure with a checkpoint after each step. Written so that a
 person or an agent can run it start to finish without guessing. Every command
 is complete; the only inputs are the ones in the first section.
 
+This procedure registers telemetry sources. For a self-managed code host,
+use a `codehost` upstream as described in
+[configuration.md](configuration.md#code-host-upstreams). Do not put
+code-host credentials or a code-host CA in the relay configuration; those
+belong to the Perfloop proxy.
+
 ## Inputs
 
 Collect these before starting. Nothing else is needed.
@@ -13,7 +19,7 @@ Collect these before starting. Nothing else is needed.
 | `<tenant>` | Your Perfloop tenant name, the segment after `/t/` in the app URL. |
 | `<namespace>` | The Kubernetes namespace the relay will run in. |
 | `<upstream-name>` | A name you choose for the source, one lowercase DNS label, for example `vm`. |
-| `<kind>` | One of the kinds `routes.go` lists: today `prometheus`, `victoriametrics`, `loki`, or `pprof`. |
+| `<kind>` | One telemetry kind: `prometheus`, `victoriametrics`, `loki`, or `pprof`. |
 | `<upstream-url>` | The provider base URL as reachable from inside the cluster, for example `http://vmselect.monitoring.svc:8481/select/0/prometheus`. No trailing slash. A `pprof` upstream has `targets` instead, one such URL per Go process ([configuration.md](configuration.md), "pprof upstreams"). |
 | `<upstream-read-token>` | A read-only token for that upstream, if it needs one. Query-scoped. |
 | `<digest>` | The relay image digest to pin. See "Choose the image" below. |

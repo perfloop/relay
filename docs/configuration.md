@@ -21,28 +21,28 @@ token: ${PERFLOOP_RELAY_TOKEN}
 # Optional. debug, info (the default), warn, or error.
 log_level: info
 
-# The sources this relay may read. At least one is required.
+# The sources this relay may reach. At least one is required.
 upstreams:
   - # The name Setup registers as the endpoint `relay://<name>`. One
     # lowercase DNS label: a-z, 0-9, and -, up to 63 characters, no
     # leading or trailing -. Names must be unique in the file.
     name: vm
-    # One of the kinds routes.go lists: today prometheus, victoriametrics,
-    # loki, or pprof. Selects the read routes
+    # One of the kinds routes.go lists: prometheus, victoriametrics,
+    # loki, pprof, or codehost. Selects the transport or read routes
     # (docs/security.md, "What the relay forwards").
     kind: victoriametrics
     # The provider base: scheme, host, port, and an optional path prefix.
-    # No user info, query, fragment, or trailing slash. The read's path is
-    # appended to it. Required for every kind but pprof, which names
-    # targets instead.
+    # No user info, query, fragment, or trailing slash. A telemetry read's
+    # path is appended to it. A codehost URL must be an HTTPS origin with
+    # no path. Required for every kind but pprof, which names targets instead.
     url: http://vmselect.monitoring.svc:8481/select/0/prometheus
-    # Optional. Headers added to every request to this upstream; they
-    # replace any header of the same name that Perfloop sent. Values are
-    # never logged or printed.
+    # Optional, telemetry only. Headers added to every request to this
+    # upstream; they replace any header of the same name that Perfloop
+    # sent. Values are never logged or printed. Refused for codehost.
     headers:
       Authorization: Bearer ${VM_READ_TOKEN}
-    # Optional. A PEM file trusted for this upstream's TLS certificate
-    # instead of the system roots.
+    # Optional, telemetry only. A PEM file trusted for this upstream's TLS
+    # certificate instead of the system roots. Refused for codehost.
     ca: /etc/perfloop-relay/vm-ca.pem
   - name: logs
     kind: loki
@@ -64,7 +64,38 @@ upstreams:
     # across all of its targets, per relay process; 1 to 8. Default 1. A
     # further read is refused with status 429.
     max_concurrent: 2
+  - name: git
+    kind: codehost
+    # Only this origin's TCP address can be reached. The default port is 443.
+    url: https://git.example.com
 ```
+
+## Code-host upstreams
+
+A `codehost` upstream carries end-to-end TLS between the Perfloop proxy and
+a self-managed GitLab or GitHub Enterprise Server. Its `url` is one HTTPS
+origin, with an optional port and no path, query, fragment, or user info.
+The relay dials only that origin's TCP address, on port 443 when no port is
+set. It does not use `HTTPS_PROXY` for this connection.
+
+Perfloop opens an HTTP/2 `CONNECT` stream inside the existing WebSocket
+tunnel. Its authority is exactly the configured upstream `name`, not a host
+or port. It has no path or query. After the TCP dial succeeds, the relay
+returns `200` and flushes its headers before it reads any stream bytes.
+The request and response bodies then carry opaque bytes in both directions.
+The relay flushes response bytes as they arrive, including TLS handshake
+records. It makes one connection attempt per stream and never replays bytes.
+
+Do not set `headers`, `ca`, `targets`, `max_seconds`, or `max_concurrent`
+on a `codehost` upstream. These fields are refused. The relay does not
+terminate the code host's TLS or add HTTP headers. Code-host credentials,
+certificate trust, and repository authorization belong to the Perfloop proxy,
+not to this transport. A relay token grants no repository permission.
+
+Code-host streams share the tunnel's eight-stream limit. They do not use the
+telemetry GET timeout or 32 MiB response limit. Closing a stream or its
+tunnel, stopping the relay, or revoking its token ends its connection.
+`-print-routes` lists the fixed CONNECT name, origin, and transport behavior.
 
 ## pprof upstreams
 

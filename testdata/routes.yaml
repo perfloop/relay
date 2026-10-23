@@ -10,3 +10,6 @@ upstreams:
   - name: logs
     kind: loki
     url: https://loki.internal
+  - name: git
+    kind: codehost
+    url: https://git.example.com
