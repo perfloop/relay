@@ -1,6 +1,7 @@
 // Command perfloop-relay runs inside a customer network. It opens tunnels to
 // the Perfloop API, answers validated telemetry reads from the configured
-// upstreams, and collects and stores nothing.
+// upstreams, carries opaque code-host TLS streams to fixed destinations, and
+// collects and stores nothing.
 package main
 
 import (
@@ -60,7 +61,7 @@ func runArgs(args []string, stdout io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	// The first signal closes every tunnel at once and Run returns; there is
-	// no drain, and a read in flight fails so Perfloop retries it elsewhere.
+	// no drain. Telemetry reads may retry elsewhere; CONNECT bytes never replay.
 	// Stopping the notifier here restores the default signal action, so a
 	// second signal ends the process even if Run has not returned yet.
 	context.AfterFunc(ctx, stop)

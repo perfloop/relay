@@ -14,8 +14,9 @@ import (
 	"github.com/perfloop/relay/link"
 )
 
-// base returns the provider API base for a supported kind. It is the one
-// list of kinds the relay serves; Validate refuses every other kind.
+// base returns the provider API base for a supported kind, empty for the
+// codehost CONNECT transport. It is the one list of kinds the relay serves;
+// Validate refuses every other kind.
 func base(kind string) (string, bool) {
 	switch kind {
 	case "prometheus", "victoriametrics":
@@ -24,6 +25,8 @@ func base(kind string) (string, bool) {
 		return "/loki/api/v1/", true
 	case "pprof":
 		return "/debug/pprof/", true
+	case "codehost":
+		return "", true
 	}
 	return "", false
 }
@@ -120,9 +123,10 @@ func route(kind, path string) (string, bool) {
 // Routes writes what a validated configuration permits, one upstream at a
 // time: the kind, the URL the relay forwards to, the request headers it passes
 // from Perfloop, the names of the headers it adds, and every request the relay
-// will forward. The relay forwards the
-// query string of a permitted route unchanged; the proxy validated it.
-// Nothing else is forwarded. Secrets are never written: header values and the
+// will forward. For codehost it lists the fixed CONNECT name and destination,
+// not HTTP read routes. The relay forwards a telemetry query unchanged unless
+// it is a pprof query, whose seconds cap it checks. Secrets are never written:
+// header values and the
 // token stay out. The listing is written whole, in one write, so a failed
 // write never leaves a partial listing that reports success.
 func Routes(w io.Writer, cfg Config) error {
@@ -136,6 +140,14 @@ func Routes(w io.Writer, cfg Config) error {
 		}
 		fmt.Fprintf(&out, "upstream %s\n", up.Name)
 		fmt.Fprintf(&out, "  kind    %s\n", up.Kind)
+		if up.Kind == "codehost" {
+			address, _ := codehostAddress(up.URL)
+			fmt.Fprintf(&out, "  url     %s\n", up.URL)
+			fmt.Fprintf(&out, "  forwards HTTP/2 CONNECT %s, with no path or query, to TCP %s\n", up.Name, address)
+			out.WriteString("  streams opaque bytes; TLS, credentials, and repository authorization stay at the proxy\n")
+			out.WriteString("  passes  no CONNECT request headers to the code host; adds none\n")
+			continue
+		}
 		if up.Kind == "pprof" {
 			for _, name := range slices.Sorted(maps.Keys(up.Targets)) {
 				fmt.Fprintf(&out, "  target  %s %s\n", name, up.Targets[name])

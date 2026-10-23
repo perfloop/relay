@@ -9,9 +9,18 @@
 // The tunnel is a WebSocket the relay opens to the API host over HTTPS, so a
 // managed balancer terminates TLS and any corporate proxy carries it. Inside
 // the socket the roles turn around: Perfloop is the HTTP/2 client and the
-// relay is the HTTP/2 server, so every validated read is an ordinary HTTP
-// request from Perfloop to the relay and the relay never sends a request into
-// Perfloop.
+// relay is the HTTP/2 server. Telemetry reads are ordinary HTTP GET requests;
+// the relay never sends a request into Perfloop.
+//
+// A codehost stream is a standard HTTP/2 CONNECT: :method is CONNECT and
+// :authority is the configured upstream name, one lowercase DNS label, with
+// no :scheme or :path and no query. The relay dials only that upstream's
+// configured HTTPS origin's TCP address (443 by default), then sends and
+// flushes a 200 response before reading body bytes. Request and response
+// bodies carry opaque end-to-end TLS between the proxy and the code host.
+// CONNECT headers never reach the code host. TLS trust, provider credentials,
+// and repository authorization belong to the proxy, not this transport.
+// Stream or tunnel closure ends the TCP connection; bytes are never replayed.
 package link
 
 import (

@@ -20,3 +20,10 @@ upstream logs
     https://loki.internal/loki/api/v1/query_range
     https://loki.internal/loki/api/v1/labels
     https://loki.internal/loki/api/v1/label/{name}/values
+
+upstream git
+  kind    codehost
+  url     https://git.example.com
+  forwards HTTP/2 CONNECT git, with no path or query, to TCP git.example.com:443
+  streams opaque bytes; TLS, credentials, and repository authorization stay at the proxy
+  passes  no CONNECT request headers to the code host; adds none

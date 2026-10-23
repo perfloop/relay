@@ -141,3 +141,56 @@ func TestValidPprofUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Code-host transport accepts only an HTTPS origin and no credentials, TLS
+// trust, or telemetry options. It derives one TCP address at startup.
+func TestCodehostConfigAllowsOnlyAnHTTPSOrigin(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://git.example.com":      "git.example.com:443",
+		"https://git.example.com:8443": "git.example.com:8443",
+		"https://192.0.2.1":            "192.0.2.1:443",
+		"https://[2001:db8::1]":        "[2001:db8::1]:443",
+		"https://[2001:db8::1]:8443":   "[2001:db8::1]:8443",
+	} {
+		cfg := Config{API: "https://app.perfloop.ai", Token: "t", Upstreams: []Upstream{{Name: "git", Kind: "codehost", URL: raw}}}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("%s: %v", raw, err)
+		}
+		if got, err := codehostAddress(raw); err != nil || got != want {
+			t.Errorf("%s: address=%q err=%v; want %q", raw, got, err, want)
+		}
+	}
+	for _, raw := range []string{
+		"", "git.example.com", "http://git.example.com", "tcp://git.example.com:443",
+		"https://git.example.com/", "https://git.example.com/api", "https://git.example.com/%2f",
+		"https://git.example.com?x=1", "https://git.example.com?", "https://git.example.com#fragment", "https://git.example.com#",
+		"https://u:p@git.example.com", "https://:443", "https:git.example.com", "https://git.example.com:abc",
+		"https://git.example.com:0", "https://git.example.com:65536", "https://git.example.com:-1",
+	} {
+		cfg := Config{API: "https://app.perfloop.ai", Token: "t", Upstreams: []Upstream{{Name: "git", Kind: "codehost", URL: raw}}}
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("accepted codehost URL %q", raw)
+		}
+	}
+	for name, change := range map[string]func(*Upstream){
+		"headers":        func(up *Upstream) { up.Headers = map[string]string{"Authorization": "Bearer local-token"} },
+		"empty headers":  func(up *Upstream) { up.Headers = map[string]string{} },
+		"ca":             func(up *Upstream) { up.CA = "codehost-ca.pem" },
+		"targets":        func(up *Upstream) { up.Targets = map[string]string{"git": "https://git.example.com"} },
+		"empty targets":  func(up *Upstream) { up.Targets = map[string]string{} },
+		"max_seconds":    func(up *Upstream) { up.MaxSeconds = 1 },
+		"max_concurrent": func(up *Upstream) { up.MaxConcurrent = 1 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			up := Upstream{Name: "git", Kind: "codehost", URL: "https://git.example.com"}
+			change(&up)
+			cfg := Config{API: "https://app.perfloop.ai", Token: "t", Upstreams: []Upstream{up}}
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("accepted codehost configuration with", name)
+			}
+			if _, err := New(cfg, nil); err == nil {
+				t.Fatal("constructed relay with", name)
+			}
+		})
+	}
+}
