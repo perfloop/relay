@@ -28,7 +28,7 @@ func connect(w http.ResponseWriter, req *http.Request, address string) (int, str
 	defer stop()
 	w.WriteHeader(http.StatusOK)
 	if err := http.NewResponseController(w).Flush(); err != nil {
-		return http.StatusOK, "truncated", err
+		return ended(req, err)
 	}
 	// The successful headers must reach the proxy before we read its body:
 	// it waits for them before sending a TLS ClientHello. Each response write
@@ -53,9 +53,20 @@ func connect(w http.ResponseWriter, req *http.Request, address string) (int, str
 	_ = req.Body.Close()
 	<-uploaded
 	if err != nil {
-		return http.StatusOK, "truncated", err
+		return ended(req, err)
 	}
 	return http.StatusOK, "connect", nil
+}
+
+// ended names why a CONNECT stopped after its 200. When the request context
+// is done, Perfloop, the tunnel or a stopped Run ended the stream, and the
+// closed socket error that follows is that end, not an upstream failure: the
+// side that ended it knows the stream is short. Any other error is truncated.
+func ended(req *http.Request, err error) (int, string, error) {
+	if cause := context.Cause(req.Context()); cause != nil {
+		return http.StatusOK, "canceled", cause
+	}
+	return http.StatusOK, "truncated", err
 }
 
 // flushWriter forwards each chunk at once instead of buffering a small TLS

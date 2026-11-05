@@ -54,7 +54,7 @@ ends, with these fields:
 | `method`, `path` | The method and path as Perfloop sent them. CONNECT has an empty path. The query string is not logged, in this field or in `error`. |
 | `request_id` | The Perfloop work behind the read, `<session id>/<tool call ref>`, from the `Perfloop-Request-Id` header. Empty for a read no tool call made, such as a connect check from Setup. |
 | `status` | The status the relay answered. |
-| `decision` | The read route that was forwarded (`query`, `labels`, ...), `connect` for a completed code-host stream, or why it failed: `unknown-upstream`, `method`, `path`, `route`, `upstream-error`, or `truncated`; for `pprof` also `unknown-target`, `query`, or `busy` (the `max_concurrent` cap). `truncated` also marks a CONNECT that failed after `200`. |
+| `decision` | The read route that was forwarded (`query`, `labels`, ...), `connect` for a completed code-host stream, or why it failed: `unknown-upstream`, `method`, `path`, `route`, `upstream-error`, or `truncated`; for `pprof` also `unknown-target`, `query`, or `busy` (the `max_concurrent` cap). `truncated` also marks a CONNECT whose code host failed after `200`. `canceled` marks a CONNECT that Perfloop, the tunnel or a stopped relay ended after `200`; it is the normal end of many code-host streams. |
 | `ms` | Time spent on the read or CONNECT stream. |
 | `error` | The upstream error, if any, without the request URL (`relay.go`, `forward`). |
 
