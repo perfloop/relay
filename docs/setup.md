@@ -178,7 +178,7 @@ and Perfloop.
 | Setup connection fails; relay log shows `"decision":"upstream-error"` | The relay reached the tunnel but not the upstream. | `url`, the upstream's TLS (`ca`), and network reachability from the namespace to the upstream. |
 | Setup connection fails; relay log shows `"status":404,"decision":"unknown-upstream"` | The endpoint name in Setup does not match `upstreams[].name`. | Use exactly `relay://<upstream-name>`. |
 | Setup connection fails; relay log shows no line at all | The read never reached this relay. | Confirm the tunnels are open; the tenant in Setup is the tenant the token belongs to. |
-| `"decision":"truncated"` | An upstream response exceeded 32 MiB and was cut. | Narrow the query on the Perfloop side; the relay does not buffer. |
+| `"decision":"truncated"` | A telemetry response exceeded 32 MiB and was cut, or a code host failed during a CONNECT stream. | Telemetry: narrow the query on the Perfloop side; the relay does not buffer. Code host: the `error` field and the code host's own logs. |
 
 ## Rotating the token
 

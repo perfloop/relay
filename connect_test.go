@@ -8,10 +8,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -365,5 +367,74 @@ func TestCodehostSharesTheTunnelStreamLimitWithTelemetry(t *testing.T) {
 	}
 	if reads.Load() != 0 || term.live()[0].State().StreamsActive != maxStreams {
 		t.Fatalf("GETs=%d tunnel=%+v; want no GET and eight active streams", reads.Load(), term.live()[0].State())
+	}
+}
+
+// A stream that Perfloop, the tunnel or the relay ends is logged as canceled,
+// not truncated: a client that canceled its own stream knows it is short. An
+// upstream that fails mid-stream is still truncated.
+func TestCodehostEndOfStreamDecision(t *testing.T) {
+	for _, tc := range []struct{ action, decision string }{
+		{"request canceled", "canceled"},
+		{"response closed", "canceled"},
+		{"upstream reset", "truncated"},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			release := make(chan struct{})
+			releaseAll := sync.OnceFunc(func() { close(release) })
+			defer releaseAll()
+			origin := tcpCodehost(t, func(conn net.Conn) {
+				_, _ = io.WriteString(conn, "ready")
+				if tc.action == "upstream reset" {
+					<-release
+					_ = conn.(*net.TCPConn).SetLinger(0)
+					return
+				}
+				_, _ = io.Copy(io.Discard, conn)
+			})
+			term := newTerminator(t, Upstream{Name: "git", Kind: "codehost", URL: origin})
+			var log bytes.Buffer
+			var logMu sync.Mutex
+			r, err := New(term.cfg, slog.New(slog.NewJSONHandler(&lockedWriter{mu: &logMu, w: &log}, nil)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			term.start(t, r)
+			term.waitTunnels(t, tunnels)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			resp, _ := openCodehost(t, ctx, term)
+			defer resp.Body.Close()
+			ready := make([]byte, len("ready"))
+			if _, err := io.ReadFull(resp.Body, ready); err != nil {
+				t.Fatal(err)
+			}
+			switch tc.action {
+			case "request canceled":
+				cancel()
+			case "response closed":
+				_ = resp.Body.Close()
+			case "upstream reset":
+				releaseAll()
+				_, _ = io.Copy(io.Discard, resp.Body)
+			}
+			want := `"decision":"` + tc.decision + `"`
+			deadline := time.Now().Add(3 * time.Second)
+			for {
+				logMu.Lock()
+				lines := log.String()
+				logMu.Unlock()
+				if strings.Contains(lines, `"method":"CONNECT"`) {
+					if !strings.Contains(lines, want) {
+						t.Fatalf("want %s in %s", want, lines)
+					}
+					return
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("no CONNECT line in %s", lines)
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		})
 	}
 }
