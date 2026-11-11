@@ -34,7 +34,7 @@ the image is what this repository builds:
    docker cp "$id:/usr/local/bin/perfloop-relay" published-relay
    docker rm "$id" >/dev/null
    docker run --rm -v "$PWD:/src" -w /src \
-     golang:1.27.3-bookworm@sha256:21ade014faf952365b9ecbd8dbdb87176fbacb82fac9fb132d9f2a7b8cc3f132 \
+     golang:1.27.4-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea \
      sh -c 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o /src/local-relay ./cmd/perfloop-relay'
    sha256sum published-relay local-relay
    ```
